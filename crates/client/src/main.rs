@@ -1,8 +1,7 @@
 use clap::Parser;
-use reqwest::multipart;
 use std::path::PathBuf;
 use tokio::fs;
-use mini_lambda_proto::{JobManifest, SubmitResponse};
+use mini_lambda_proto::{JobManifest, SubmitResponse, JobSubmission};
 
 #[derive(Parser)]
 /// Command-line arguments for the mini-lambda client application.
@@ -25,20 +24,20 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     let wasm_bytes = fs::read(&args.wasm).await?;
-    let manifest = JobManifest { args: args.call_args };
+    let manifest = JobManifest { call_args: args.call_args };
+
+    let job_submission = JobSubmission {
+        module_bytes: wasm_bytes,
+        manifest: manifest
+    };
+
+    println!("sending job submission to {} with manifest: {:?} and module size {}\n", args.server, job_submission.manifest, job_submission.module_bytes.len());
 
     let client = reqwest::Client::new();
 
-    let manifest_json = serde_json::to_string(&manifest)?;
-    let form = multipart::Form::new()
-        .part("module", multipart::Part::bytes(wasm_bytes).file_name(
-            args.wasm.file_name().and_then(|s| s.to_str()).unwrap_or("module.wasm").to_string()
-        ))
-        .text("manifest", manifest_json);
-
     let resp = client
         .post(format!("{}/submit", args.server.trim_end_matches('/')))
-        .multipart(form)
+        .json(&job_submission)
         .send()
         .await?;
 
@@ -55,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let submit: SubmitResponse = serde_json::from_slice(&body_bytes)?;
-    println!("submitted job: {}", (submit.job_id).0);
+    println!("submitted job: {}", submit.job_id);
     if let Some(msg) = submit.message {
         println!("{}", msg);
     }
