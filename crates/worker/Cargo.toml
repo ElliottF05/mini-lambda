@@ -1,0 +1,17 @@
+[package]
+name = "mini-lambda-worker"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs"] }
+axum = { version = "0.6", features = ["json", "multipart"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+mini-lambda-proto = { path = "../proto" }
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+wasmer = { version = "6.1.0-rc.3" }
+wasmer-wasix = { version = "0.601.0-rc.3" }
+wasmer-types = { version = "6.1.0-rc.3" }
