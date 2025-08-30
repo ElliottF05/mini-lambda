@@ -1,84 +1,55 @@
-use std::io::{Read, Write};
+use std::{io::{Read, Write}, sync::Arc};
 
 use axum::{
     http::StatusCode,
     response::IntoResponse,
     routing::post,
+    extract::Extension,
     Json, Router,
 };
 use mini_lambda_proto::{JobManifest, JobSubmission, SubmitResponse};
 use serde_json::json;
 use std::{net::SocketAddr, ops::Sub, path::PathBuf};
 use tokio::fs;
+use thiserror::Error;
 use tracing::{error, info};
 use uuid::Uuid;
 
-use wasmer::Module;
+use wasmer::{Module, Engine};
 use wasmer_wasix::{
     runners::wasi::{WasiRunner, RuntimeOrEngine},
     Pipe
 };
 
-async fn submit(Json(data): Json<JobSubmission>) -> impl IntoResponse {
-    // let mut manifest: Option<JobManifest> = None;
-    // let mut wasm_bytes: Option<Vec<u8>> = None;
+#[derive(Error, Debug)]
+pub enum WasmRunError {
+    #[error("WASM compilation error, the WASM module failed to compile: {0}")]
+    Compile(String),
+    #[error("WASM execution error during runtime: {0}")]
+    Execution(String),
+    #[error("WASM I/O error, failed to read captured stdout: {0}")]
+    Io(#[from] std::io::Error)
+}
 
-    // // iterate fields
-    // while let Ok(Some(field)) = multipart.next_field().await {
-    //     match field.name().unwrap() {
-    //         "manifest" => {
-    //             match field.text().await {
-    //                 Ok(text) => match serde_json::from_str::<JobManifest>(&text) {
-    //                     Ok(m) => manifest = Some(m),
-    //                     Err(e) => {
-    //                         let msg = format!("failed to parse manifest JSON: {}", e);
-    //                         error!("{}", msg);
-    //                         return (StatusCode::BAD_REQUEST, msg).into_response();
-    //                     }
-    //                 },
-    //                 Err(e) => {
-    //                     let msg = format!("failed to read manifest field: {}", e);
-    //                     error!("{}", msg);
-    //                     return (StatusCode::BAD_REQUEST, msg).into_response();
-    //                 }
-    //             }
-    //         }
-    //         "module" => {
-    //             match field.bytes().await {
-    //                 Ok(bytes) => wasm_bytes = Some(bytes.to_vec()),
-    //                 Err(e) => {
-    //                     let msg = format!("failed to read module bytes: {}", e);
-    //                     error!("{}", msg);
-    //                     return (StatusCode::BAD_REQUEST, msg).into_response();
-    //                 }
-    //             }
-    //         }
-    //         other => {
-    //             info!("ignoring unexpected field: {}", other);
-    //         }
-    //     }
-    // }
+async fn submit(
+    Extension(engine): Extension<Arc<Engine>>,
+    Json(data): Json<JobSubmission>,
+) -> impl IntoResponse {
 
-    // if manifest.is_none() || wasm_bytes.is_none() {
-    //     let msg = "missing manifest or module field".to_string();
-    //     error!("{}", msg);
-    //     return (StatusCode::BAD_REQUEST, msg).into_response();
-    // }
+    if data.module_bytes.is_empty() {
+        return (StatusCode::BAD_REQUEST, "empty module".to_string()).into_response();
+    }
 
-    println!("received job submission: {:?}", data.manifest);
-    println!("module size: {}", data.module_bytes.len());
+    let job_id = Uuid::new_v4();
 
-    // WASMER STUFF
+    // run the wasm execution in a blocking thread to not block the tokio runtime
+    let run_result = tokio::task::spawn_blocking(move || -> Result<String, WasmRunError> {
 
-    // run the Wasm execution in a blocking thread so we don't block the tokio runtime
-    let run_result = tokio::task::spawn_blocking(move || -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        // create engine and compile inside the blocking thread
-        let engine = wasmer::Engine::default();
-        let module = Module::new(&engine, &data.module_bytes)?;
+        let module = Module::new(&engine, &data.module_bytes)
+            .map_err(|e| WasmRunError::Compile(e.to_string()))?;
 
         // create pipe pair for stdout
         let (stdout_sender, mut stdout_reader) = Pipe::channel();
-
         {
             // create and configure the runner
             let mut runner = WasiRunner::new();
@@ -86,30 +57,41 @@ async fn submit(Json(data): Json<JobSubmission>) -> impl IntoResponse {
 
             // run the module (blocking)
             runner.run_wasm(
-                RuntimeOrEngine::Engine(engine),
-                "hello",
+                RuntimeOrEngine::Engine((*engine).clone()),
+                &job_id.to_string(),
                 module,
                 wasmer_types::ModuleHash::xxhash(&data.module_bytes),
-            )?;
-            // runner dropped here -> stdout pipe will be closed
+            ).map_err(|e| WasmRunError::Execution(e.to_string()))?;
         }
 
-        // read all stdout (blocking read) and return
+        // read output and return it
         let mut buf = String::new();
         stdout_reader.read_to_string(&mut buf)?;
         Ok(buf)
     })
-    .await; // await the JoinHandle
+    .await; // JoinHandle result
 
-    // handle spawn_blocking result
+    // handle results
     let buf = match run_result {
         Ok(Ok(s)) => s,
-        Ok(Err(e)) => {
-            error!("wasm execution failed: {}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, format!("wasm exec error: {}", e)).into_response();
+        Ok(Err(exec_err)) => {
+            match exec_err {
+                WasmRunError::Compile(msg) => {
+                    // compilation is a user's code problem -> 400
+                    return (StatusCode::BAD_REQUEST, msg).into_response();
+                }
+                WasmRunError::Execution(msg) => {
+                    return (StatusCode::UNPROCESSABLE_ENTITY, msg).into_response();
+                }
+                WasmRunError::Io(ioe) => {
+                    error!("I/O while running wasm: {}", ioe);
+                    return (StatusCode::INTERNAL_SERVER_ERROR, "internal I/O error".to_string()).into_response();
+                }
+            }
         }
         Err(join_err) => {
-            error!("wasm thread panicked: {}", join_err);
+            // the spawned thread panicked / was cancelled
+            error!("wasm thread join failed: {}", join_err);
             return (StatusCode::INTERNAL_SERVER_ERROR, "wasm thread panicked".to_string()).into_response();
         }
     };
@@ -123,18 +105,22 @@ async fn submit(Json(data): Json<JobSubmission>) -> impl IntoResponse {
     (StatusCode::CREATED, Json(resp)).into_response()
 }
 
+
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
+    // Create the shared engine
+    let engine = Arc::new(Engine::default());
+
     // hard-coded port for now
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8080").await.unwrap();
-
-    let app = Router::new().route("/submit", post(submit));
+    let app = Router::new()
+        .route("/submit", post(submit))
+        .layer(Extension(engine)); // inject engine
 
     let server = axum::serve(listener, app);
-
-    // Wait for Ctrl+C and use it to trigger graceful shutdown
     let graceful = server.with_graceful_shutdown(async {
         if let Err(e) = tokio::signal::ctrl_c().await {
             error!("failed to listen for ctrl_c: {}", e);

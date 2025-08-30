@@ -5,7 +5,7 @@ use mini_lambda_proto::{JobManifest, SubmitResponse, JobSubmission};
 
 #[derive(Parser)]
 /// Command-line arguments for the mini-lambda client application.
-struct Args {
+struct CliArgs {
     /// WASM file to submit
     #[arg(value_name = "WASM")]
     wasm: PathBuf,
@@ -21,22 +21,22 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
+    let cli_args = CliArgs::parse();
 
-    let wasm_bytes = fs::read(&args.wasm).await?;
-    let manifest = JobManifest { call_args: args.call_args };
+    let wasm_bytes = fs::read(&cli_args.wasm).await?;
+    let manifest = JobManifest { call_args: cli_args.call_args };
 
     let job_submission = JobSubmission {
         module_bytes: wasm_bytes,
         manifest: manifest
     };
 
-    println!("sending job submission to {} with manifest: {:?} and module size {}\n", args.server, job_submission.manifest, job_submission.module_bytes.len());
+    println!("sending job submission to {} with manifest: {:?} and module size {}\n", cli_args.server, job_submission.manifest, job_submission.module_bytes.len());
 
     let client = reqwest::Client::new();
 
     let resp = client
-        .post(format!("{}/submit", args.server.trim_end_matches('/')))
+        .post(format!("{}/submit", cli_args.server.trim_end_matches('/')))
         .json(&job_submission)
         .send()
         .await?;
