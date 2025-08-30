@@ -25,3 +25,5 @@ axum = { version = "0.8.4"}
 tracing = "0.1"
 tracing-subscriber = "0.3.20"
 async-trait = "0.1.50"
+sha2 = "0.10.9"
+hex = "0.4.3"

@@ -1,3 +1,5 @@
+mod module_cache;
+
 use std::{io::Read, sync::Arc, time::{Instant}};
 
 use anyhow::anyhow;
@@ -8,7 +10,7 @@ use axum::{
     extract::Extension,
     Json, Router,
 };
-use mini_lambda_proto::{JobSubmission, SubmitResponse};
+use mini_lambda_proto::{hash_wasm_module, JobSubmissionHash, JobSubmissionWasm, SubmitResponse};
 use thiserror::Error;
 use tracing::{error, info};
 use uuid::Uuid;
@@ -18,6 +20,8 @@ use wasmer_wasix::{
     runners::wasi::{WasiRunner, RuntimeOrEngine},
     Pipe
 };
+
+use crate::module_cache::ModuleCache;
 
 #[derive(Error, Debug)]
 pub enum WasmRunError {
@@ -32,6 +36,16 @@ pub enum WasmRunError {
 
     #[error("WASM thread failed to join (wasm thread panicked): {0}")]
     JoinError(#[from] tokio::task::JoinError)
+}
+
+impl WasmRunError {
+    pub fn to_http_response(&self) -> (StatusCode, String) {
+        match self {
+            WasmRunError::Execution(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
+            WasmRunError::Io(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal I/O error".to_string()),
+            WasmRunError::JoinError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "wasm thread panicked".to_string()),
+        }
+    }
 }
 
 /// Runs the inputted wasm module in a separate tokio spawn_blocking thread
@@ -65,44 +79,64 @@ async fn run_wasm_module(engine: Engine, module: Module) -> Result<String, WasmR
 
 }
 
-async fn submit(
+async fn submit_wasm(
     Extension(engine): Extension<Arc<Engine>>,
-    Json(data): Json<JobSubmission>,
+    Extension(module_cache): Extension<Arc<tokio::sync::Mutex<ModuleCache>>>,
+    Json(data): Json<JobSubmissionWasm>,
 ) -> impl IntoResponse {
 
     if data.module_bytes.is_empty() {
         return (StatusCode::BAD_REQUEST, "empty wasm module".to_string()).into_response();
     }
 
-    let job_id = Uuid::new_v4();
-
-    info!("running job with id {}", job_id);
-
     let module = match Module::new(&engine, &data.module_bytes) {
-        Ok(m) => m,
+        Ok(m) => Arc::new(m),
         Err(e) => return (StatusCode::BAD_REQUEST, format!("failed to compile wasm module: {}", e)).into_response(),
     };
 
-    let run_result = run_wasm_module((*engine).clone(), module).await;
+    let module_hash = hash_wasm_module(&data.module_bytes);
+
+    let mut module_cache = module_cache.lock().await;
+    module_cache.put(module_hash, module.clone());
+
+    let run_result = run_wasm_module((*engine).clone(), (*module).clone()).await;
 
     // handle results
     let buf = match run_result {
         Ok(s) => s,
-        Err(exec_err) => {
-            match exec_err {
-                WasmRunError::Execution(msg) => {
-                    return (StatusCode::UNPROCESSABLE_ENTITY, msg).into_response();
-                }
-                WasmRunError::Io(ioe) => {
-                    error!("I/O while running wasm: {}", ioe);
-                    return (StatusCode::INTERNAL_SERVER_ERROR, "internal I/O error".to_string()).into_response();
-                },
-                WasmRunError::JoinError(je) => {
-                    error!("wasm thread join failed: {}", je);
-                    return (StatusCode::INTERNAL_SERVER_ERROR, "wasm thread panicked".to_string()).into_response();
-                }
-            }
-        }
+        Err(exec_err) => return exec_err.to_http_response().into_response(),
+    };
+
+    let resp = SubmitResponse {
+        job_id: Uuid::new_v4(),
+        message: Some(format!("job accepted, output: {}", buf)),
+    };
+
+    (StatusCode::CREATED, Json(resp)).into_response()
+}
+
+async fn submit_hash(
+    Extension(engine): Extension<Arc<Engine>>,
+    Extension(module_cache): Extension<Arc<tokio::sync::Mutex<ModuleCache>>>,
+    Json(data): Json<JobSubmissionHash>,
+) -> impl IntoResponse {
+    
+    if data.module_hash.is_empty() {
+        return (StatusCode::BAD_REQUEST, "empty module hash".to_string()).into_response();
+    }
+
+    let mut module_cache = module_cache.lock().await;
+    let module = match module_cache.get(&data.module_hash) {
+        Some(m) => m,
+        None => return (StatusCode::NOT_FOUND, "module not found in cache, please submit the full wasm module".to_string()).into_response(),
+    };
+
+    let run_result = run_wasm_module((*engine).clone(), (*module).clone()).await;
+
+    // handle results
+    let buf = match run_result {
+        Ok(s) => s,
+        Err(exec_err) => return exec_err.to_http_response().into_response(),
     };
 
     let resp = SubmitResponse {
@@ -121,11 +155,16 @@ async fn main() {
     // Create the shared engine
     let engine = Arc::new(Engine::default());
 
+    // Create the module cache
+    let module_cache = Arc::new(tokio::sync::Mutex::new(ModuleCache::new()));
+
     // hard-coded port for now
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8080").await.unwrap();
     let app = Router::new()
-        .route("/submit", post(submit))
-        .layer(Extension(engine)); // inject engine
+        .route("/submit_wasm", post(submit_wasm))
+        .route("/submit_hash", post(submit_hash))
+        .layer(Extension(engine)) // inject engine
+        .layer(Extension(module_cache)); // inject module cache
 
     let server = axum::serve(listener, app);
     let graceful = server.with_graceful_shutdown(async {

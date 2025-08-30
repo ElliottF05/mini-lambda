@@ -13,3 +13,5 @@ futures-util = { workspace = true }
 axum = { workspace = true}
 reqwest = { workspace = true}
 async-trait = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }

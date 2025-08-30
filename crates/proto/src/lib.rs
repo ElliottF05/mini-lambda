@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize, Deserializer, Serializer};
 use uuid::Uuid;
+use sha2::{Digest, Sha256};
 
 use base64::{engine::general_purpose, Engine as _};
 
@@ -9,9 +10,17 @@ pub struct JobManifest {
     pub call_args: Vec<String>,
 }
 
-/// What client sends as payload (includes WASM binary module and JobManifest metadata)
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct JobSubmission {
+pub struct JobSubmissionHash {
+    pub module_hash: String, // hex-encoded sha256 hash of the module bytes
+    pub manifest: JobManifest,
+}
+
+/// What client sends as payload to be executed (includes WASM binary module and JobManifest metadata).
+/// This contains the WASM binary itself, there also exists JobSubmissionHash which just sends a hash
+/// over, avoiding the need to send the entire binary (if the module is cached on the worker).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct JobSubmissionWasm {
     #[serde(
         serialize_with = "serialize_base64",
         deserialize_with = "deserialize_base64"
@@ -43,4 +52,8 @@ where
 pub struct SubmitResponse {
     pub job_id: Uuid,
     pub message: Option<String>,
+}
+
+pub fn hash_wasm_module(module_bytes: &[u8]) -> String {
+    return hex::encode(Sha256::digest(module_bytes));
 }

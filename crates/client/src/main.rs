@@ -1,7 +1,8 @@
 use clap::Parser;
-use std::path::PathBuf;
+use reqwest::StatusCode;
+use std::{hash, path::PathBuf, time::Instant};
 use tokio::fs;
-use mini_lambda_proto::{JobManifest, SubmitResponse, JobSubmission};
+use mini_lambda_proto::{hash_wasm_module, JobManifest, JobSubmissionHash, JobSubmissionWasm, SubmitResponse};
 
 #[derive(Parser)]
 /// Command-line arguments for the mini-lambda client application.
@@ -21,28 +22,46 @@ struct CliArgs {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let start = Instant::now();
     let cli_args = CliArgs::parse();
 
     let wasm_bytes = fs::read(&cli_args.wasm).await?;
+    let wasm_hash = hash_wasm_module(&wasm_bytes);
     let manifest = JobManifest { call_args: cli_args.call_args };
 
-    let job_submission = JobSubmission {
+    let job_submission_wasm = JobSubmissionWasm {
         module_bytes: wasm_bytes,
         manifest: manifest
     };
 
-    println!("sending job submission to {} with manifest: {:?} and module size {}\n", cli_args.server, job_submission.manifest, job_submission.module_bytes.len());
+    let job_submission_hash = JobSubmissionHash {
+        module_hash: wasm_hash,
+        manifest: job_submission_wasm.manifest.clone(),
+    };
+
+    println!("sending job submission to {} with manifest: {:?} and module size {}\n", cli_args.server, job_submission_wasm.manifest, job_submission_wasm.module_bytes.len());
 
     let client = reqwest::Client::new();
 
     let resp = client
-        .post(format!("{}/submit", cli_args.server.trim_end_matches('/')))
-        .json(&job_submission)
+        .post(format!("{}/submit_hash", cli_args.server.trim_end_matches('/')))
+        .json(&job_submission_hash)
         .send()
         .await?;
 
-    let status = resp.status();
-    let body_bytes = resp.bytes().await.unwrap_or_default();
+    let mut status = resp.status();
+    let mut body_bytes = resp.bytes().await.unwrap_or_default();
+
+    if status == StatusCode::NOT_FOUND {
+        println!("module not found in cache, submitting full wasm module ({} bytes)", job_submission_wasm.module_bytes.len());
+        let resp = client
+            .post(format!("{}/submit_wasm", cli_args.server.trim_end_matches('/')))
+            .json(&job_submission_wasm)
+            .send()
+            .await?;
+        status = resp.status();
+        body_bytes = resp.bytes().await.unwrap_or_default();
+    }
 
     if !status.is_success() {
         eprintln!(
@@ -58,6 +77,8 @@ async fn main() -> anyhow::Result<()> {
     if let Some(msg) = submit.message {
         println!("{}", msg);
     }
+
+    println!("total time: {:.2?}", start.elapsed());
 
     Ok(())
 }
