@@ -1,6 +1,7 @@
 use clap::Parser;
-use reqwest::StatusCode;
-use std::{hash, path::PathBuf, time::Instant};
+use anyhow::anyhow;
+use reqwest::{StatusCode};
+use std::{path::PathBuf, time::Instant};
 use tokio::fs;
 use mini_lambda_proto::{hash_wasm_module, JobManifest, JobSubmissionHash, JobSubmissionWasm, SubmitResponse};
 
@@ -20,60 +21,88 @@ struct CliArgs {
     server: String,
 }
 
+async fn submit(
+    client: &reqwest::Client,
+    server_address: &str,
+    wasm_bytes: Vec<u8>,
+    job_manifest: &JobManifest,
+) -> anyhow::Result<SubmitResponse> {
+
+    let server_address = server_address.trim_end_matches('/');
+
+    // create hash submission
+    let wasm_hash = hash_wasm_module(&wasm_bytes);
+    let hash_submission = JobSubmissionHash {
+        module_hash: wasm_hash,
+        manifest: job_manifest.clone(),
+    };
+
+
+    // try submit_hash first
+    let resp = client
+        .post(format!("{}/submit_hash", server_address))
+        .json(&hash_submission)
+        .send()
+        .await?;
+
+    let status = resp.status();
+    let mut body = resp.bytes().await.unwrap_or_default();
+
+    // if not found, upload wasm
+    if status == StatusCode::NOT_FOUND {
+
+        // create wasm submission
+        let wasm_submission = JobSubmissionWasm {
+            module_bytes: wasm_bytes,
+            manifest: job_manifest.clone(),
+        };
+
+        let resp = client
+            .post(format!("{}/submit_wasm", server_address))
+            .json(&wasm_submission)
+            .send()
+            .await?;
+
+        let status = resp.status();
+        body = resp.bytes().await.unwrap_or_default();
+
+        if !status.is_success() {
+            return Err(anyhow!(
+                "submit failed: {} - {}",
+                status,
+                String::from_utf8_lossy(&body)
+            ));
+        }
+
+        let submit: SubmitResponse = serde_json::from_slice(&body)?;
+        return Ok(submit);
+    }
+
+    if !status.is_success() {
+        return Err(anyhow!(
+            "submit_hash failed: {} - {}",
+            status,
+            String::from_utf8_lossy(&body)
+        ));
+    }
+
+    let submit: SubmitResponse = serde_json::from_slice(&body)?;
+    Ok(submit)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let start = Instant::now();
     let cli_args = CliArgs::parse();
 
     let wasm_bytes = fs::read(&cli_args.wasm).await?;
-    let wasm_hash = hash_wasm_module(&wasm_bytes);
     let manifest = JobManifest { call_args: cli_args.call_args };
-
-    let job_submission_wasm = JobSubmissionWasm {
-        module_bytes: wasm_bytes,
-        manifest: manifest
-    };
-
-    let job_submission_hash = JobSubmissionHash {
-        module_hash: wasm_hash,
-        manifest: job_submission_wasm.manifest.clone(),
-    };
-
-    println!("sending job submission to {} with manifest: {:?} and module size {}\n", cli_args.server, job_submission_wasm.manifest, job_submission_wasm.module_bytes.len());
 
     let client = reqwest::Client::new();
 
-    let resp = client
-        .post(format!("{}/submit_hash", cli_args.server.trim_end_matches('/')))
-        .json(&job_submission_hash)
-        .send()
-        .await?;
+    let submit = submit(&client, &cli_args.server, wasm_bytes, &manifest).await?;
 
-    let mut status = resp.status();
-    let mut body_bytes = resp.bytes().await.unwrap_or_default();
-
-    if status == StatusCode::NOT_FOUND {
-        println!("module not found in cache, submitting full wasm module ({} bytes)", job_submission_wasm.module_bytes.len());
-        let resp = client
-            .post(format!("{}/submit_wasm", cli_args.server.trim_end_matches('/')))
-            .json(&job_submission_wasm)
-            .send()
-            .await?;
-        status = resp.status();
-        body_bytes = resp.bytes().await.unwrap_or_default();
-    }
-
-    if !status.is_success() {
-        eprintln!(
-            "submit failed: {} - {}",
-            status,
-            String::from_utf8_lossy(&body_bytes)
-        );
-        std::process::exit(1);
-    }
-
-    let submit: SubmitResponse = serde_json::from_slice(&body_bytes)?;
-    println!("submitted job: {}", submit.job_id);
+    println!("job completed: {}", submit.job_id);
     if let Some(msg) = submit.message {
         println!("{}", msg);
     }
