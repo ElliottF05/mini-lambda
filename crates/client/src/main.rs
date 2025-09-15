@@ -3,6 +3,8 @@ use anyhow::anyhow;
 use reqwest::{StatusCode};
 use std::{path::PathBuf, time::Instant};
 use tokio::fs;
+use serde::Deserialize;
+use uuid::Uuid;
 use mini_lambda_proto::{hash_wasm_module, JobManifest, JobSubmissionHash, JobSubmissionWasm, SubmitResponse};
 
 #[derive(Parser)]
@@ -90,6 +92,32 @@ async fn submit(
     Ok(submit)
 }
 
+#[derive(Deserialize)]
+struct RequestWorkerResponse {
+    pub job_id: Uuid,
+    pub worker_endpoint: String,
+}
+
+async fn request_worker(client: &reqwest::Client, orchestrator: &str) -> anyhow::Result<String> {
+    let orchestrator = orchestrator.trim_end_matches('/');
+    let url = format!("{}/request_worker", orchestrator);
+
+    let resp = client.post(&url).send().await?;
+    let status = resp.status();
+    let body = resp.bytes().await.unwrap_or_default();
+
+    if !status.is_success() {
+        return Err(anyhow!(
+            "request_worker failed: {} - {}",
+            status,
+            String::from_utf8_lossy(&body)
+        ));
+    }
+
+    let reply: RequestWorkerResponse = serde_json::from_slice(&body)?;
+    Ok(reply.worker_endpoint)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let start = Instant::now();
@@ -100,7 +128,11 @@ async fn main() -> anyhow::Result<()> {
 
     let client = reqwest::Client::new();
 
-    let submit = submit(&client, &opts.server, wasm_bytes, &manifest).await?;
+    // ask orchestrator for a worker
+    let worker = request_worker(&client, &opts.server).await?;
+
+    // submit the job to the chosen worker
+    let submit = submit(&client, &worker, wasm_bytes, &manifest).await?;
 
     println!("job completed: {}", submit.job_id);
     if let Some(msg) = submit.message {

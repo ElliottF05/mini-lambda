@@ -1,11 +1,14 @@
-use axum::{extract::Extension, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use std::net::SocketAddr;
+
+use axum::{body::Bytes, extract::Extension, http::StatusCode, response::IntoResponse, routing::post, Json, Router, ServiceExt};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::error;
+use tracing::{error, info};
 use uuid::Uuid;
 use clap::Parser;
 use axum::extract::ConnectInfo;
-use std::net::SocketAddr;
+use tower_http::trace::TraceLayer;
+
 mod registry;
 use registry::WorkerRegistry;
 use mini_lambda_proto::{RegisterWorkerRequest, RegisterWorkerResponse};
@@ -34,13 +37,13 @@ impl IntoResponse for OrchestratorError {
 
 // Reuse proto types for register request/response. We expect workers to send { port: u16 }.
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct UpdateQueueRequest {
     worker_id: Uuid,
     queue_len: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 struct OrchestratorSubmitResponse {
     job_id: Uuid,
     worker_endpoint: String,
@@ -51,6 +54,8 @@ async fn register_worker(
     Extension(registry): Extension<WorkerRegistry>,
     Json(req): Json<RegisterWorkerRequest>,
 ) -> (StatusCode, Json<RegisterWorkerResponse>) {
+
+    info!("registering worker: {:?}", req);
     // build endpoint from peer.ip() and the port the worker reports
     let endpoint = format!("http://{}:{}", peer.ip(), req.port);
     let id = registry.register(endpoint).await;
@@ -64,6 +69,8 @@ async fn update_queue(
     Extension(registry): Extension<WorkerRegistry>,
     Json(req): Json<UpdateQueueRequest>,
 ) -> Result<StatusCode, OrchestratorError> {
+
+    info!("updating queue for worker: {:?}", req);
     if registry.update_queue(req.worker_id, req.queue_len).await {
         Ok(StatusCode::OK)
     } else {
@@ -74,6 +81,8 @@ async fn update_queue(
 async fn request_worker(
     Extension(registry): Extension<WorkerRegistry>,
 ) -> Result<(StatusCode, Json<OrchestratorSubmitResponse>), OrchestratorError> {
+
+    info!("requesting worker");
     if let Some((_id, endpoint)) = registry.pick_and_increment().await {
         let resp = OrchestratorSubmitResponse {
             job_id: Uuid::new_v4(),
@@ -106,9 +115,12 @@ async fn main() {
         .route("/register_worker", post(register_worker))
         .route("/update_queue", post(update_queue))
         .route("/request_worker", post(request_worker))
+        .layer(TraceLayer::new_for_http()) // add request tracing
         .layer(Extension(registry)); // inject registry
 
-    let server = axum::serve(listener, app);
+    info!("orchestrator listening on {}", opts.bind);
+
+    let server = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>());
     let graceful = server.with_graceful_shutdown(async {
         if let Err(e) = tokio::signal::ctrl_c().await {
             error!("failed to listen for ctrl_c: {}", e);

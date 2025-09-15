@@ -10,7 +10,7 @@ use axum::{
 };
 use mini_lambda_proto::{hash_wasm_module, JobSubmissionHash, JobSubmissionWasm, SubmitResponse};
 use thiserror::Error;
-use tracing::{error};
+use tracing::{error, info};
 use clap::Parser;
 use reqwest::Client;
 use mini_lambda_proto::{RegisterWorkerRequest, RegisterWorkerResponse};
@@ -172,11 +172,19 @@ async fn main() {
     let local = listener.local_addr().unwrap();
     let port = local.port();
 
-    // Register with the orchestrator, sending the chosen port. Orchestrator will use our observed peer IP + this port.
-    let client = Client::new();
-    let register_url = format!("{}/register_worker", opts.orchestrator);
+    // register with orchestrator
+    let base = if opts.orchestrator.starts_with("http://") || opts.orchestrator.starts_with("https://") {
+        opts.orchestrator.trim_end_matches('/').to_string()
+    } else {
+        format!("http://{}", opts.orchestrator.trim_end_matches('/'))
+    };
+
+    let register_url = format!("{}/register_worker", base);
+    info!("registering with orchestrator at {}", register_url);
+
     let req = RegisterWorkerRequest { port };
-    
+
+    let client = Client::new();
     match client.post(&register_url).json(&req).send().await {
         Ok(resp) => {
             if resp.status().is_success() {

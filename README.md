@@ -27,7 +27,3 @@ There are lots of changes being made still and API is not stable.
 ### Some Stretch Goals
 - Web dashboard for monitoring jobs and workers
 - More advanced authenticaion
-
-
-### Todo
-- Edit client to use orchestrator as intermediary

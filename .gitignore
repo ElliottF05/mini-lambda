@@ -24,3 +24,7 @@ target
 # Added by cargo
 
 /target
+
+
+# Misc. (added by me)
+HIDDEN.md
