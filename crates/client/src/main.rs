@@ -7,7 +7,7 @@ use mini_lambda_proto::{hash_wasm_module, JobManifest, JobSubmissionHash, JobSub
 
 #[derive(Parser)]
 /// Command-line arguments for the mini-lambda client application.
-struct CliArgs {
+struct Opts {
     /// WASM file to submit
     #[arg(value_name = "WASM")]
     wasm: PathBuf,
@@ -93,14 +93,14 @@ async fn submit(
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let start = Instant::now();
-    let cli_args = CliArgs::parse();
+    let opts = Opts::parse();
 
-    let wasm_bytes = fs::read(&cli_args.wasm).await?;
-    let manifest = JobManifest { call_args: cli_args.call_args };
+    let wasm_bytes = fs::read(&opts.wasm).await?;
+    let manifest = JobManifest { call_args: opts.call_args };
 
     let client = reqwest::Client::new();
 
-    let submit = submit(&client, &cli_args.server, wasm_bytes, &manifest).await?;
+    let submit = submit(&client, &opts.server, wasm_bytes, &manifest).await?;
 
     println!("job completed: {}", submit.job_id);
     if let Some(msg) = submit.message {

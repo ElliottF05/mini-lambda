@@ -57,3 +57,15 @@ pub struct SubmitResponse {
 pub fn hash_wasm_module(module_bytes: &[u8]) -> String {
     return hex::encode(Sha256::digest(module_bytes));
 }
+
+/// Worker registration request used by workers to tell the orchestrator which port they'll listen on.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RegisterWorkerRequest {
+    /// The port the worker is listening on (worker may have bound to port 0).
+    pub port: u16,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RegisterWorkerResponse {
+    pub worker_id: Uuid,
+}

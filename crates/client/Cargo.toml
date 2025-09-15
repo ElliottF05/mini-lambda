@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
+clap = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["fs"] }
 reqwest = { workspace = true, features = ["json","rustls-tls"] }
 serde = { workspace = true, features = ["derive"] }

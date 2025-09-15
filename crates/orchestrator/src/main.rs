@@ -3,8 +3,12 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::error;
 use uuid::Uuid;
+use clap::Parser;
+use axum::extract::ConnectInfo;
+use std::net::SocketAddr;
 mod registry;
 use registry::WorkerRegistry;
+use mini_lambda_proto::{RegisterWorkerRequest, RegisterWorkerResponse};
 
 // proto types aren't required by this handler (no-body request_worker). Keep proto in the workspace for other crates.
 
@@ -28,15 +32,7 @@ impl IntoResponse for OrchestratorError {
 }
 
 
-#[derive(Deserialize)]
-struct RegisterWorkerRequest {
-    endpoint: String,
-}
-
-#[derive(Serialize)]
-struct RegisterWorkerResponse {
-    worker_id: Uuid,
-}
+// Reuse proto types for register request/response. We expect workers to send { port: u16 }.
 
 #[derive(Deserialize)]
 struct UpdateQueueRequest {
@@ -51,10 +47,13 @@ struct OrchestratorSubmitResponse {
 }
 
 async fn register_worker(
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Extension(registry): Extension<WorkerRegistry>,
     Json(req): Json<RegisterWorkerRequest>,
 ) -> (StatusCode, Json<RegisterWorkerResponse>) {
-    let id = registry.register(req.endpoint).await;
+    // build endpoint from peer.ip() and the port the worker reports
+    let endpoint = format!("http://{}:{}", peer.ip(), req.port);
+    let id = registry.register(endpoint).await;
     (
         StatusCode::CREATED,
         Json(RegisterWorkerResponse { worker_id: id }),
@@ -90,11 +89,19 @@ async fn request_worker(
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
+    #[derive(Parser)]
+    struct Opts {
+        /// address to bind, e.g. 127.0.0.1:8080
+        #[arg(long, default_value = "127.0.0.1:8080")]
+        bind: String,
+    }
+
+    let opts = Opts::parse();
 
     let registry = WorkerRegistry::new();
 
-    // hard-coded port for now
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8080").await.unwrap();
+    // bind to configured address
+    let listener = tokio::net::TcpListener::bind(&opts.bind).await.unwrap();
     let app = Router::new()
         .route("/register_worker", post(register_worker))
         .route("/update_queue", post(update_queue))

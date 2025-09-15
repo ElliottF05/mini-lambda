@@ -11,6 +11,9 @@ use axum::{
 use mini_lambda_proto::{hash_wasm_module, JobSubmissionHash, JobSubmissionWasm, SubmitResponse};
 use thiserror::Error;
 use tracing::{error};
+use clap::Parser;
+use reqwest::Client;
+use mini_lambda_proto::{RegisterWorkerRequest, RegisterWorkerResponse};
 use uuid::Uuid;
 
 use wasmer::{Module, Engine};
@@ -149,14 +152,46 @@ async fn submit_hash(
 async fn main() {
     tracing_subscriber::fmt::init();
 
+    #[derive(Parser)]
+    struct Opts {
+        /// Orchestrator base URL, e.g. http://127.0.0.1:8080
+        #[arg(long)]
+        orchestrator: String,
+    }
+
+    let opts = Opts::parse();
+
     // Create the shared engine
     let engine = Arc::new(Engine::default());
 
     // Create the module cache
     let module_cache = Arc::new(tokio::sync::Mutex::new(ModuleCache::new()));
 
-    // hard-coded port for now
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8081").await.unwrap();
+    // bind to an OS-assigned port so multiple workers can run on the same host
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await.unwrap();
+    let local = listener.local_addr().unwrap();
+    let port = local.port();
+
+    // Register with the orchestrator, sending the chosen port. Orchestrator will use our observed peer IP + this port.
+    let client = Client::new();
+    let register_url = format!("{}/register_worker", opts.orchestrator);
+    let req = RegisterWorkerRequest { port };
+    
+    match client.post(&register_url).json(&req).send().await {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                let _body: RegisterWorkerResponse = resp.json().await.unwrap_or(RegisterWorkerResponse { worker_id: Uuid::new_v4() });
+                tracing::info!("registered with orchestrator {}", register_url);
+            } else {
+                error!("failed to register with orchestrator: {} -> status {}", register_url, resp.status());
+            }
+        }
+        Err(e) => {
+            error!("failed to register with orchestrator {}: {}", register_url, e);
+        }
+    }
+
+    // build and serve app using the already-bound listener
     let app = Router::new()
         .route("/submit_wasm", post(submit_wasm))
         .route("/submit_hash", post(submit_hash))

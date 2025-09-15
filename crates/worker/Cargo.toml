@@ -18,3 +18,5 @@ wasmer-wasix = { version = "0.601.0-rc.3" }
 wasmer-types = { version = "6.1.0-rc.3" }
 mini-lambda-proto = { path = "../proto" }
 lru = "0.16.0"
+reqwest = { workspace = true, features = ["json", "rustls-tls"] }
+clap = { workspace = true, features = ["derive"] }
