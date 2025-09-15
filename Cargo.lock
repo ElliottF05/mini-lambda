@@ -1830,6 +1830,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "mini-lambda-orchestrator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "clap",
+ "hex",
+ "mini-lambda-proto",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.16",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "mini-lambda-proto"
 version = "0.1.0"
 dependencies = [
@@ -2091,27 +2112,6 @@ dependencies = [
  "libc",
  "pkg-config",
  "vcpkg",
-]
-
-[[package]]
-name = "orchestrator"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "clap",
- "hex",
- "mini-lambda-proto",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.16",
- "tokio",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]
