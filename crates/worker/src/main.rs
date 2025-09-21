@@ -1,6 +1,7 @@
 mod module_cache;
+mod queue_ticket;
 
-use std::{io::{Read,Write}, sync::Arc};
+use std::{io::{Read,Write}, sync::{atomic::AtomicUsize, Arc}};
 use axum::{
     http::StatusCode,
     response::IntoResponse,
@@ -23,6 +24,7 @@ use wasmer_wasix::{
 };
 
 use crate::module_cache::ModuleCache;
+use crate::queue_ticket::QueueTicket;
 
 #[derive(Error, Debug)]
 pub enum WorkerError {
@@ -74,8 +76,10 @@ impl IntoResponse for WorkerError {
 }
 
 /// Runs the inputted wasm module in a separate tokio spawn_blocking thread
-async fn run_wasm_module(engine: Engine, module: Module, run_args: Vec<String>) -> Result<String, WorkerError> {
+async fn run_wasm_module(engine: Engine, module: Module, run_args: Vec<String>, ticket: QueueTicket) -> Result<String, WorkerError> {
     let run_result = tokio::task::spawn_blocking(move || -> Result<String, WorkerError> {
+
+        let _ticket = ticket; // keep ticket alive for the duration of this function
 
         // create pipe pair for stdout
         let (stdout_sender, mut stdout_reader) = Pipe::channel();
@@ -132,6 +136,7 @@ async fn unregister_worker(client: &Client, base: &str, worker_id: Uuid) -> Resu
 async fn handle_submit_wasm(
     Extension(engine): Extension<Arc<Engine>>,
     Extension(module_cache): Extension<Arc<tokio::sync::Mutex<ModuleCache>>>,
+    Extension(queue_len): Extension<Arc<AtomicUsize>>,
     Json(data): Json<JobSubmissionWasm>,
 ) -> Result<(StatusCode, Json<SubmitResponse>), WorkerError> {
 
@@ -147,7 +152,10 @@ async fn handle_submit_wasm(
     let mut module_cache = module_cache.lock().await;
     module_cache.put(module_hash, module.clone());
 
-    let buf = run_wasm_module((*engine).clone(), (*module).clone(), data.manifest.call_args).await?;
+    // acquire a queue ticket to increase the active job count
+    let ticket = QueueTicket::acquire(queue_len.clone());
+
+    let buf = run_wasm_module((*engine).clone(), (*module).clone(), data.manifest.call_args, ticket).await?;
 
     let resp = SubmitResponse {
         job_id: Uuid::new_v4(),
@@ -160,6 +168,7 @@ async fn handle_submit_wasm(
 async fn handle_submit_hash(
     Extension(engine): Extension<Arc<Engine>>,
     Extension(module_cache): Extension<Arc<tokio::sync::Mutex<ModuleCache>>>,
+    Extension(queue_len): Extension<Arc<AtomicUsize>>,
     Json(data): Json<JobSubmissionHash>,
 ) -> Result<(StatusCode, Json<SubmitResponse>), WorkerError> {
     
@@ -170,7 +179,10 @@ async fn handle_submit_hash(
     let mut module_cache = module_cache.lock().await;
     let module = module_cache.get(&data.module_hash).ok_or_else(|| WorkerError::ModuleNotFound(data.module_hash.clone()))?;
 
-    let buf = run_wasm_module((*engine).clone(), (*module).clone(), data.manifest.call_args).await?;
+    // acquire a queue ticket to increase the active job count
+    let ticket = QueueTicket::acquire(queue_len.clone());
+
+    let buf = run_wasm_module((*engine).clone(), (*module).clone(), data.manifest.call_args, ticket).await?;
 
     let resp = SubmitResponse {
         job_id: Uuid::new_v4(),
@@ -236,13 +248,15 @@ async fn main() -> Result<(), WorkerError> {
         }
     }?;
 
+    let queue_len = Arc::new(tokio::sync::Mutex::new(0usize));
 
     // build and serve app using the already-bound listener
     let app = Router::new()
         .route("/submit_wasm", post(handle_submit_wasm))
         .route("/submit_hash", post(handle_submit_hash))
         .layer(Extension(engine)) // inject engine
-        .layer(Extension(module_cache)); // inject module cache
+        .layer(Extension(module_cache)) // inject module cache
+        .layer(Extension(queue_len)); // inject queue length
 
     let server = axum::serve(listener, app);
     let graceful = server.with_graceful_shutdown(async move {
