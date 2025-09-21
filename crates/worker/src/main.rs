@@ -66,7 +66,7 @@ impl IntoResponse for WorkerError {
 }
 
 /// Runs the inputted wasm module in a separate tokio spawn_blocking thread
-async fn run_wasm_module(engine: Engine, module: Module) -> Result<String, WorkerError> {
+async fn run_wasm_module(engine: Engine, module: Module, run_args: Vec<String>) -> Result<String, WorkerError> {
     let run_result = tokio::task::spawn_blocking(move || -> Result<String, WorkerError> {
 
         // create pipe pair for stdout
@@ -77,7 +77,7 @@ async fn run_wasm_module(engine: Engine, module: Module) -> Result<String, Worke
             let mut runner = WasiRunner::new();
             runner
                 .with_stdout(Box::new(stdout_sender)) // use stdout to capture output
-                .with_args(vec!["10"]); // send args
+                .with_args(run_args); // send args
 
             // run the module (blocking)
             runner.run_wasm(
@@ -117,7 +117,7 @@ async fn handle_submit_wasm(
     let mut module_cache = module_cache.lock().await;
     module_cache.put(module_hash, module.clone());
 
-    let buf = run_wasm_module((*engine).clone(), (*module).clone()).await?;
+    let buf = run_wasm_module((*engine).clone(), (*module).clone(), data.manifest.call_args).await?;
 
     let resp = SubmitResponse {
         job_id: Uuid::new_v4(),
@@ -140,7 +140,7 @@ async fn handle_submit_hash(
     let mut module_cache = module_cache.lock().await;
     let module = module_cache.get(&data.module_hash).ok_or_else(|| WorkerError::ModuleNotFound(data.module_hash.clone()))?;
 
-    let buf = run_wasm_module((*engine).clone(), (*module).clone()).await?;
+    let buf = run_wasm_module((*engine).clone(), (*module).clone(), data.manifest.call_args).await?;
 
     let resp = SubmitResponse {
         job_id: Uuid::new_v4(),
