@@ -1,6 +1,6 @@
 mod module_cache;
 
-use std::{io::Read, sync::Arc};
+use std::{io::{Read,Write}, sync::Arc};
 use axum::{
     http::StatusCode,
     response::IntoResponse,
@@ -71,10 +71,13 @@ async fn run_wasm_module(engine: Engine, module: Module) -> Result<String, Worke
 
         // create pipe pair for stdout
         let (stdout_sender, mut stdout_reader) = Pipe::channel();
+
         {
             // create and configure the runner
             let mut runner = WasiRunner::new();
-            runner.with_stdout(Box::new(stdout_sender));
+            runner
+                .with_stdout(Box::new(stdout_sender)) // use stdout to capture output
+                .with_args(vec!["10"]); // send args
 
             // run the module (blocking)
             runner.run_wasm(
@@ -96,7 +99,7 @@ async fn run_wasm_module(engine: Engine, module: Module) -> Result<String, Worke
 
 }
 
-async fn submit_wasm(
+async fn handle_submit_wasm(
     Extension(engine): Extension<Arc<Engine>>,
     Extension(module_cache): Extension<Arc<tokio::sync::Mutex<ModuleCache>>>,
     Json(data): Json<JobSubmissionWasm>,
@@ -124,7 +127,7 @@ async fn submit_wasm(
     Ok((StatusCode::CREATED, Json(resp)))
 }
 
-async fn submit_hash(
+async fn handle_submit_hash(
     Extension(engine): Extension<Arc<Engine>>,
     Extension(module_cache): Extension<Arc<tokio::sync::Mutex<ModuleCache>>>,
     Json(data): Json<JobSubmissionHash>,
@@ -201,8 +204,8 @@ async fn main() {
 
     // build and serve app using the already-bound listener
     let app = Router::new()
-        .route("/submit_wasm", post(submit_wasm))
-        .route("/submit_hash", post(submit_hash))
+        .route("/submit_wasm", post(handle_submit_wasm))
+        .route("/submit_hash", post(handle_submit_hash))
         .layer(Extension(engine)) // inject engine
         .layer(Extension(module_cache)); // inject module cache
 

@@ -36,7 +36,7 @@ mini-lambda is a lightweight, Rust-powered serverless compute platform for runni
 
 3. Submit WASM jobs from the client:
    ```bash
-   cargo run -p mini-lambda-client -- test-wasm/test-wasm.wasm
+   cargo run -p mini-lambda-client -- crates/client/test-wasm/test-wasm.wasm
    ```
    - By default the client contacts `http://127.0.0.1:8080` (the orchestrator). See CLI options below.
 
