@@ -8,7 +8,7 @@ use axum::{
     extract::Extension,
     Json, Router,
 };
-use mini_lambda_proto::{hash_wasm_module, JobSubmissionHash, JobSubmissionWasm, SubmitResponse};
+use mini_lambda_proto::{hash_wasm_module, JobSubmissionHash, JobSubmissionWasm, SubmitResponse, UnregisterWorkerRequest};
 use thiserror::Error;
 use tracing::{error, info};
 use clap::Parser;
@@ -43,6 +43,12 @@ pub enum WorkerError {
 
     #[error("WASM thread failed to join (wasm thread panicked): {0}")]
     JoinError(#[from] tokio::task::JoinError),
+
+    #[error("failed to register with orchestrator: {0}")]
+    Registration(String),
+
+    #[error("failed to unregister from orchestrator: {0}")]
+    Unregistration(String),
 }
 
 impl WorkerError {
@@ -54,6 +60,8 @@ impl WorkerError {
             WorkerError::ModuleNotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
             WorkerError::Io(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal I/O error".to_string()),
             WorkerError::JoinError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "wasm thread panicked".to_string()),
+            WorkerError::Registration(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
+            WorkerError::Unregistration(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
         }
     }
 }
@@ -97,6 +105,28 @@ async fn run_wasm_module(engine: Engine, module: Module, run_args: Vec<String>) 
 
     return run_result;
 
+}
+
+/// Unregister the worker from the orchestrator (called on shutdown).
+async fn unregister_worker(client: &Client, base: &str, worker_id: Uuid) -> Result<(), WorkerError> {
+    let url = format!("{}/unregister_worker", base);
+    let req = UnregisterWorkerRequest { worker_id };
+
+    match client.post(&url).json(&req).send().await {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                info!("successfully unregistered worker {} at {}", worker_id, url);
+                Ok(())
+            } else {
+                error!("unregister failed: {} -> status {}", url, resp.status());
+                Err(WorkerError::Unregistration(format!("unregister returned {}", resp.status())))
+            }
+        }
+        Err(e) => {
+            error!("failed to unregister with orchestrator {}: {}", url, e);
+            Err(WorkerError::Unregistration(format!("unregister network error: {}", e)))
+        }
+    }
 }
 
 async fn handle_submit_wasm(
@@ -152,7 +182,7 @@ async fn handle_submit_hash(
 
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), WorkerError> {
     tracing_subscriber::fmt::init();
 
     #[derive(Parser)]
@@ -171,8 +201,8 @@ async fn main() {
     let module_cache = Arc::new(tokio::sync::Mutex::new(ModuleCache::new()));
 
     // bind to an OS-assigned port so multiple workers can run on the same host
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await.unwrap();
-    let local = listener.local_addr().unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await.map_err(|e| WorkerError::Registration(format!("failed to bind listener: {}", e)))?;
+    let local = listener.local_addr().map_err(|e| WorkerError::Registration(format!("failed to get local_addr: {}", e)))?;
     let port = local.port();
 
     // register with orchestrator
@@ -188,19 +218,24 @@ async fn main() {
     let req = RegisterWorkerRequest { port };
 
     let client = Client::new();
-    match client.post(&register_url).json(&req).send().await {
+
+    let worker_id = match client.post(&register_url).json(&req).send().await {
         Ok(resp) => {
             if resp.status().is_success() {
-                let _body: RegisterWorkerResponse = resp.json().await.unwrap_or(RegisterWorkerResponse { worker_id: Uuid::new_v4() });
-                tracing::info!("registered with orchestrator {}", register_url);
+                let body: RegisterWorkerResponse = resp.json().await.map_err(|e| WorkerError::Registration(format!("failed to parse response: {}", e)))?;
+                info!("registered with orchestrator {}, worker_id is {}", register_url, body.worker_id);
+                Ok::<Uuid, WorkerError>(body.worker_id)
             } else {
                 error!("failed to register with orchestrator: {} -> status {}", register_url, resp.status());
+                Err(WorkerError::Registration(format!("registration failed: status {}", resp.status())))?
             }
         }
         Err(e) => {
             error!("failed to register with orchestrator {}: {}", register_url, e);
+            Err(WorkerError::Registration(format!("registration failed: {}", e)))?
         }
-    }
+    }?;
+
 
     // build and serve app using the already-bound listener
     let app = Router::new()
@@ -210,13 +245,23 @@ async fn main() {
         .layer(Extension(module_cache)); // inject module cache
 
     let server = axum::serve(listener, app);
-    let graceful = server.with_graceful_shutdown(async {
+    let graceful = server.with_graceful_shutdown(async move {
         if let Err(e) = tokio::signal::ctrl_c().await {
             error!("failed to listen for ctrl_c: {}", e);
+            return;
+        }
+
+        // unregister on shutdown
+        info!("shutdown signal received, unregistering from orchestrator...");
+        match unregister_worker(&client, &base, worker_id).await {
+            Ok(_) => info!("unregistered successfully"),
+            Err(e) => error!("failed to unregister during shutdown: {}", e),
         }
     });
 
     if let Err(e) = graceful.await {
         error!("server error: {}", e);
     }
+
+    Ok(())
 }

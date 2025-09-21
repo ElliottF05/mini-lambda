@@ -65,6 +65,13 @@ pub struct RegisterWorkerRequest {
     pub port: u16,
 }
 
+/// Worker unregistration request used by workers to tell the orchestrator they are shutting down.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UnregisterWorkerRequest {
+    /// The id of the worker to unregister.
+    pub worker_id: Uuid,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RegisterWorkerResponse {
     pub worker_id: Uuid,

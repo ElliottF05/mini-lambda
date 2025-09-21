@@ -11,7 +11,7 @@ use tower_http::trace::TraceLayer;
 
 mod registry;
 use registry::WorkerRegistry;
-use mini_lambda_proto::{RegisterWorkerRequest, RegisterWorkerResponse};
+use mini_lambda_proto::{RegisterWorkerRequest, RegisterWorkerResponse, UnregisterWorkerRequest};
 
 // proto types aren't required by this handler (no-body request_worker). Keep proto in the workspace for other crates.
 
@@ -65,6 +65,19 @@ async fn register_worker(
     )
 }
 
+async fn unregister_worker(
+    Extension(registry): Extension<WorkerRegistry>,
+    Json(req): Json<UnregisterWorkerRequest>,
+) -> Result<StatusCode, OrchestratorError> {
+
+    info!("unregistering worker with id: {:?}", req.worker_id);
+    if registry.unregister(req.worker_id).await {
+        Ok(StatusCode::OK)
+    } else {
+        Err(OrchestratorError::WorkerNotFound)
+    }
+}
+
 async fn update_queue(
     Extension(registry): Extension<WorkerRegistry>,
     Json(req): Json<UpdateQueueRequest>,
@@ -113,6 +126,7 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(&opts.bind).await.unwrap();
     let app = Router::new()
         .route("/register_worker", post(register_worker))
+        .route("/unregister_worker", post(unregister_worker))
         .route("/update_queue", post(update_queue))
         .route("/request_worker", post(request_worker))
         .layer(TraceLayer::new_for_http()) // add request tracing

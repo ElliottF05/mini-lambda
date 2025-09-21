@@ -34,6 +34,11 @@ impl WorkerRegistry {
         id
     }
 
+    /// Unregister a worker by id. Returns true if the worker existed and was unregistered.
+    pub async fn unregister(&self, worker_id: Uuid) -> bool {
+        self.inner.lock().await.remove(&worker_id).is_some()
+    }
+
     /// Update the approximate queue length for a worker. Returns true if the worker existed.
     pub async fn update_queue(&self, worker_id: Uuid, queue_len: usize) -> bool {
         let mut m = self.inner.lock().await;
