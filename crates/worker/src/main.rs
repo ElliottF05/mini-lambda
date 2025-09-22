@@ -214,7 +214,7 @@ async fn main() -> Result<(), WorkerError> {
     let engine = Arc::new(Engine::default());
 
     // Create the module cache
-    let module_cache = Arc::new(tokio::sync::Mutex::new(ModuleCache::new()));
+    let module_cache = Arc::new(tokio::sync::Mutex::new(ModuleCache::<Module>::new()));
 
     // bind to an OS-assigned port so multiple workers can run on the same host
     let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await.map_err(|e| WorkerError::Registration(format!("failed to bind listener: {}", e)))?;
