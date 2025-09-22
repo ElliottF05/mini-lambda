@@ -35,11 +35,11 @@ mod tests {
         let counter = Arc::new(AtomicUsize::new(0));
 
         {
-            let t1 = QueueTicket::acquire(counter.clone());
+            let _t1 = QueueTicket::acquire(counter.clone());
             assert_eq!(counter.load(Ordering::SeqCst), 1);
 
             {
-                let t2 = QueueTicket::acquire(counter.clone());
+                let _t2 = QueueTicket::acquire(counter.clone());
                 assert_eq!(counter.load(Ordering::SeqCst), 2);
 
                 // t2 drops at end of this inner scope
