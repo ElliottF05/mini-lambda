@@ -64,6 +64,23 @@ mini-lambda is a lightweight, Rust-powered serverless compute platform for runni
 
 ---
 
+## Testing
+
+There are a few small unit tests included in the most stable pieces of the codebase (so far):
+
+- Orchestrator: tests for WorkerRegistry (register, pick_and_increment, update_queue, unregister).
+- Worker: tests for ModuleCache (LRU bheavior) and QueueTicket (RAII counter behavior).
+
+Note: most of the CLI and networking code is still evolving, so tests currently focus on these more stable parts for now.
+
+Run tests:
+- All workspace tests:
+  ```bash
+  cargo test
+  ```
+
+--
+
 ## Contributing
 
 This is early-stage work so contributions, ideas, and bug reports are welcome! Feel free to open an issue or PR, or contact me at elliotthfaa@gmail.com!
