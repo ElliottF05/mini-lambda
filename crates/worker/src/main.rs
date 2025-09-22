@@ -22,7 +22,7 @@ use wasmer::{Module, Engine};
 
 use crate::module_cache::ModuleCache;
 use crate::errors::WorkerError;
-use crate::registration::unregister_worker;
+use crate::registration::{register_with_orchestrator, unregister_with_orchestrator};
 use crate::submission::{handle_submit_wasm, handle_submit_hash};
 
 
@@ -57,29 +57,9 @@ async fn main() -> Result<(), WorkerError> {
         format!("http://{}", opts.orchestrator.trim_end_matches('/'))
     };
 
-    let register_url = format!("{}/register_worker", base);
-    info!("registering with orchestrator at {}", register_url);
-
-    let req = RegisterWorkerRequest { port };
-
     let client = Client::new();
 
-    let worker_id = match client.post(&register_url).json(&req).send().await {
-        Ok(resp) => {
-            if resp.status().is_success() {
-                let body: RegisterWorkerResponse = resp.json().await.map_err(|e| WorkerError::Registration(format!("failed to parse response: {}", e)))?;
-                info!("registered with orchestrator {}, worker_id is {}", register_url, body.worker_id);
-                Ok::<Uuid, WorkerError>(body.worker_id)
-            } else {
-                error!("failed to register with orchestrator: {} -> status {}", register_url, resp.status());
-                Err(WorkerError::Registration(format!("registration failed: status {}", resp.status())))?
-            }
-        }
-        Err(e) => {
-            error!("failed to register with orchestrator {}: {}", register_url, e);
-            Err(WorkerError::Registration(format!("registration failed: {}", e)))?
-        }
-    }?;
+    let worker_id = register_with_orchestrator(&client, &base, port).await?;
 
     let queue_len = Arc::new(AtomicUsize::new(0));
 
@@ -100,7 +80,7 @@ async fn main() -> Result<(), WorkerError> {
 
         // unregister on shutdown
         info!("shutdown signal received, unregistering from orchestrator...");
-        match unregister_worker(&client, &base, worker_id).await {
+        match unregister_with_orchestrator(&client, &base, worker_id).await {
             Ok(_) => info!("unregistered successfully"),
             Err(e) => error!("failed to unregister during shutdown: {}", e),
         }
