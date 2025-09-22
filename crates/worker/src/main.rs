@@ -140,6 +140,8 @@ async fn handle_submit_wasm(
     Json(data): Json<JobSubmissionWasm>,
 ) -> Result<(StatusCode, Json<SubmitResponse>), WorkerError> {
 
+    info!("received wasm submission with manifest: {:?}", data.manifest);
+
     if data.module_bytes.is_empty() {
         return Err(WorkerError::Validation("empty wasm module".into()));
     }
@@ -171,6 +173,8 @@ async fn handle_submit_hash(
     Extension(queue_len): Extension<Arc<AtomicUsize>>,
     Json(data): Json<JobSubmissionHash>,
 ) -> Result<(StatusCode, Json<SubmitResponse>), WorkerError> {
+
+    info!("received hash submission with manifest: {:?}", data.manifest);
     
     if data.module_hash.is_empty() {
         return Err(WorkerError::Validation("empty module hash".into()));
@@ -248,7 +252,7 @@ async fn main() -> Result<(), WorkerError> {
         }
     }?;
 
-    let queue_len = Arc::new(tokio::sync::Mutex::new(0usize));
+    let queue_len = Arc::new(AtomicUsize::new(0));
 
     // build and serve app using the already-bound listener
     let app = Router::new()
