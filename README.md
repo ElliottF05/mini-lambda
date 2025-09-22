@@ -8,15 +8,15 @@ mini-lambda is a lightweight, Rust-powered serverless compute platform for runni
 
 ## Status
 
-**In development!** APIs and internals may change frequently. Expect breaking changes while the project evolves.
+**In development!** APIs and internals are changing frequently so expect breaking changes while the project evolves
 
 ## Key features
 
 - **Serverless execution:** Run uploaded WebAssembly modules in a sandboxed environment.
 - **Low latency:** Ahead-of-time compilation and caching to target sub-50ms cold start times.
 - **Distributed orchestration:** Workers dynamically register and receive jobs from an orchestrator.
-- **Secure runtime:** Sandbox isolation with configurable memory/time limits and restricted capabilities.
-- **Scalable design:** Architecture designed to scale horizontally across 100+ heterogeneous nodes.
+- **Secure runtime:** Sandbox isolation with restricted capabilities.
+- **Scalable design:** Architecture designed to scale horizontally across 100+ distributed nodes.
 
 ---
 
@@ -29,7 +29,7 @@ mini-lambda is a lightweight, Rust-powered serverless compute platform for runni
    cargo run -p mini-lambda-orchestrator -- --bind 127.0.0.1:8080
    ```
 
-2. Start one or more workers (each binds to an OS-assigned port and registers with the orchestrator):
+2. Start one or more workers (each binds to an OS assigned port and registers with the orchestrator):
    ```bash
    cargo run -p mini-lambda-worker -- --orchestrator 127.0.0.1:8080
    ```
@@ -38,7 +38,7 @@ mini-lambda is a lightweight, Rust-powered serverless compute platform for runni
    ```bash
    cargo run -p mini-lambda-client -- crates/client/test-wasm/test-wasm.wasm
    ```
-   - By default the client contacts `http://127.0.0.1:8080` (the orchestrator). See CLI options below.
+   - By default the client contacts `http://127.0.0.1:8080` (the default orchestrator). See CLI options below.
 
 ---
 
@@ -83,4 +83,4 @@ Run tests:
 
 ## Contributing
 
-This is early-stage work so contributions, ideas, and bug reports are welcome! Feel free to open an issue or PR, or contact me at elliotthfaa@gmail.com!
+This project is early stage so contributions, ideas, bug reports are welcome! Feel free to open an issue or PR, or contact me at elliotthfaa@gmail.com!
