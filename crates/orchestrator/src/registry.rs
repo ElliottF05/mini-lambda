@@ -80,3 +80,61 @@ impl WorkerRegistry {
         self.inner.lock().await.clone()
     }
 }
+
+
+
+// Tests for WorkerRegistry
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn register_and_snapshot_contains_worker() {
+        let reg = WorkerRegistry::new();
+        let id = reg.register("http://1.2.3.4:1000".to_string()).await;
+        let snap = reg.snapshot().await;
+        assert!(snap.contains_key(&id));
+        let info = snap.get(&id).unwrap();
+        assert_eq!(info.endpoint, "http://1.2.3.4:1000");
+        assert_eq!(info.queue_len, 0);
+    }
+
+    #[tokio::test]
+    async fn pick_and_increment_chooses_smallest_and_increments() {
+        let reg = WorkerRegistry::new();
+        let id1 = reg.register("http://a:1".to_string()).await;
+        let id2 = reg.register("http://b:2".to_string()).await;
+
+        // make second busier
+        assert!(reg.update_queue(id2, 10).await);
+
+        // pick should choose id1 (smaller queue)
+        let picked = reg.pick_and_increment().await;
+        assert!(picked.is_some());
+        let (picked_id, endpoint) = picked.unwrap();
+        assert_eq!(picked_id, id1);
+        assert_eq!(endpoint, "http://a:1");
+
+        // snapshot verifies queue_len incremented for id1
+        let snap = reg.snapshot().await;
+        assert_eq!(snap.get(&id1).unwrap().queue_len, 1);
+    }
+
+    #[tokio::test]
+    async fn unregister_and_update_queue_behaviour() {
+        let reg = WorkerRegistry::new();
+        let id = reg.register("http://x:1".to_string()).await;
+        assert!(reg.update_queue(id, 3).await);
+        assert!(reg.unregister(id).await);
+        // further updates should fail since worker is gone
+        assert!(!reg.update_queue(id, 1).await);
+        let snap = reg.snapshot().await;
+        assert!(!snap.contains_key(&id));
+    }
+
+    #[tokio::test]
+    async fn pick_on_empty_registry_returns_none() {
+        let reg = WorkerRegistry::new();
+        assert!(reg.pick_and_increment().await.is_none());
+    }
+}
