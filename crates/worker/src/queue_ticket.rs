@@ -19,3 +19,53 @@ impl Drop for QueueTicket {
         self.counter.fetch_sub(1, Ordering::SeqCst);
     }
 }
+
+
+
+
+// Unit tests for QueueTicket
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+
+    #[test]
+    fn acquire_increments_and_drop_decrements() {
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        {
+            let t1 = QueueTicket::acquire(counter.clone());
+            assert_eq!(counter.load(Ordering::SeqCst), 1);
+
+            {
+                let t2 = QueueTicket::acquire(counter.clone());
+                assert_eq!(counter.load(Ordering::SeqCst), 2);
+
+                // t2 drops at end of this inner scope
+            }
+            assert_eq!(counter.load(Ordering::SeqCst), 1);
+
+            // t1 drops at end of outer scope
+        }
+
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn multiple_tickets_work_and_independent_scopes() {
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        let t1 = QueueTicket::acquire(counter.clone());
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+
+        let t2 = QueueTicket::acquire(counter.clone());
+        assert_eq!(counter.load(Ordering::SeqCst), 2);
+
+        drop(t1);
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+
+        drop(t2);
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+    }
+}
