@@ -78,3 +78,10 @@ pub struct UnregisterWorkerRequest {
 pub struct RegisterWorkerResponse {
     pub worker_id: Uuid,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HeartbeatUpdate {
+    pub worker_id: Uuid,
+    pub seq: usize,
+    pub credits: usize,
+}
