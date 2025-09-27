@@ -4,6 +4,7 @@ mod errors;
 mod runner;
 mod registration;
 mod submission;
+mod heartbeat;
 
 use std::sync::{atomic::AtomicUsize, Arc};
 use axum::{
@@ -15,8 +16,6 @@ use axum::{
 use tracing::{error, info};
 use clap::Parser;
 use reqwest::Client;
-use mini_lambda_proto::{RegisterWorkerRequest, RegisterWorkerResponse};
-use uuid::Uuid;
 
 use wasmer::{Module, Engine};
 

@@ -9,7 +9,7 @@ use crate::errors::WorkerError;
 pub async fn register_with_orchestrator(client: &Client, base: &str, port: u16) -> Result<Uuid, WorkerError> {
     let url = format!("{}/register_worker", base);
     info!("registering with orchestrator at {}", url);
-    let req = RegisterWorkerRequest { port };
+    let req = RegisterWorkerRequest { port, initial_credits: 1 }; // TODO: make credits configurable
 
     let resp = client.post(&url).json(&req).send().await.map_err(|e| {
         WorkerError::Registration(format!("failed to send register request: {}", e))

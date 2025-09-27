@@ -38,9 +38,9 @@ impl IntoResponse for OrchestratorError {
 // Reuse proto types for register request/response. We expect workers to send { port: u16 }.
 
 #[derive(Deserialize, Debug)]
-struct UpdateQueueRequest {
+struct UpdateCreditsRequest {
     worker_id: Uuid,
-    queue_len: usize,
+    credits: usize,
 }
 
 #[derive(Serialize, Debug)]
@@ -58,7 +58,7 @@ async fn register_worker(
     info!("registering worker: {:?}", req);
     // build endpoint from peer.ip() and the port the worker reports
     let endpoint = format!("http://{}:{}", peer.ip(), req.port);
-    let id = registry.register(endpoint).await;
+    let id = registry.register(endpoint, req.initial_credits).await;
     (
         StatusCode::CREATED,
         Json(RegisterWorkerResponse { worker_id: id }),
@@ -78,13 +78,13 @@ async fn unregister_worker(
     }
 }
 
-async fn update_queue(
+async fn update_credits(
     Extension(registry): Extension<WorkerRegistry>,
-    Json(req): Json<UpdateQueueRequest>,
+    Json(req): Json<UpdateCreditsRequest>,
 ) -> Result<StatusCode, OrchestratorError> {
 
-    info!("updating queue for worker: {:?}", req);
-    if registry.update_queue(req.worker_id, req.queue_len).await {
+    info!("updating credits for worker: {:?}", req);
+    if registry.update_credits(req.worker_id, req.credits).await {
         Ok(StatusCode::OK)
     } else {
         Err(OrchestratorError::WorkerNotFound)
@@ -96,7 +96,7 @@ async fn request_worker(
 ) -> Result<(StatusCode, Json<OrchestratorSubmitResponse>), OrchestratorError> {
 
     info!("requesting worker");
-    if let Some((_id, endpoint)) = registry.pick_and_increment().await {
+    if let Some((_id, endpoint)) = registry.pick_and_decrement().await {
         let resp = OrchestratorSubmitResponse {
             job_id: Uuid::new_v4(),
             worker_endpoint: endpoint,
@@ -127,7 +127,7 @@ async fn main() {
     let app = Router::new()
         .route("/register_worker", post(register_worker))
         .route("/unregister_worker", post(unregister_worker))
-        .route("/update_queue", post(update_queue))
+        .route("/update_credits", post(update_credits))
         .route("/request_worker", post(request_worker))
         .layer(TraceLayer::new_for_http()) // add request tracing
         .layer(Extension(registry)); // inject registry

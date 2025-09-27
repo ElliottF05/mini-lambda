@@ -63,6 +63,8 @@ pub fn hash_wasm_module(module_bytes: &[u8]) -> String {
 pub struct RegisterWorkerRequest {
     /// The port the worker is listening on (worker may have bound to port 0).
     pub port: u16,
+    /// The initial credit allocation for the worker.
+    pub initial_credits: usize,
 }
 
 /// Worker unregistration request used by workers to tell the orchestrator they are shutting down.
