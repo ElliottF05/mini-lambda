@@ -28,6 +28,9 @@ pub enum WorkerError {
 
     #[error("failed to unregister from orchestrator: {0}")]
     Unregistration(String),
+
+    #[error("failed to send heartbeat: {0}")]
+    Heartbeat(String),
 }
 
 impl WorkerError {
@@ -41,6 +44,7 @@ impl WorkerError {
             WorkerError::JoinError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "wasm thread panicked".to_string()),
             WorkerError::Registration(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
             WorkerError::Unregistration(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
+            WorkerError::Heartbeat(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
         }
     }
 }
