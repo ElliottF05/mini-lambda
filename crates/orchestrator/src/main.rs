@@ -1,6 +1,7 @@
 mod registry;
 mod errors;
 mod handlers;
+mod heartbeat;
 
 use std::net::SocketAddr;
 
@@ -11,7 +12,7 @@ use tower_http::trace::TraceLayer;
 
 use registry::WorkerRegistry;
 
-use crate::handlers::{register_worker, request_worker, unregister_worker, update_credits};
+use crate::{handlers::{register_worker, request_worker, unregister_worker, update_credits}, heartbeat::handle_heartbeat_received};
 
 
 #[tokio::main]
@@ -35,6 +36,7 @@ async fn main() {
         .route("/unregister_worker", post(unregister_worker))
         .route("/update_credits", post(update_credits))
         .route("/request_worker", post(request_worker))
+        .route("/heartbeat", post(handle_heartbeat_received)) // <-- new route to accept worker heartbeats
         .layer(TraceLayer::new_for_http()) // add request tracing
         .layer(Extension(registry)); // inject registry
 
