@@ -7,12 +7,12 @@ use tracing::info;
 use uuid::Uuid;
 use wasmer::{Engine, Module};
 
-use crate::{errors::WorkerError, module_cache::ModuleCache, queue_ticket::QueueTicket, runner::run_wasm_module};
+use crate::{errors::WorkerError, module_cache::ModuleCache, job_ticket::JobTicket, runner::run_wasm_module};
 
 pub async fn handle_submit_wasm(
     Extension(engine): Extension<Arc<Engine>>,
     Extension(module_cache): Extension<Arc<tokio::sync::Mutex<ModuleCache>>>,
-    Extension(queue_len): Extension<Arc<AtomicUsize>>,
+    Extension(num_jobs): Extension<Arc<AtomicUsize>>,
     Json(data): Json<JobSubmissionWasm>,
 ) -> Result<(StatusCode, Json<SubmitResponse>), WorkerError> {
 
@@ -30,8 +30,8 @@ pub async fn handle_submit_wasm(
     let mut module_cache = module_cache.lock().await;
     module_cache.put(module_hash, module.clone());
 
-    // acquire a queue ticket to increase the active job count
-    let ticket = QueueTicket::acquire(queue_len.clone());
+    // acquire a job ticket to increase the active job count
+    let ticket = JobTicket::acquire(num_jobs.clone());
 
     let buf = run_wasm_module((*engine).clone(), (*module).clone(), data.manifest.call_args, ticket).await?;
 
@@ -46,7 +46,7 @@ pub async fn handle_submit_wasm(
 pub async fn handle_submit_hash(
     Extension(engine): Extension<Arc<Engine>>,
     Extension(module_cache): Extension<Arc<tokio::sync::Mutex<ModuleCache>>>,
-    Extension(queue_len): Extension<Arc<AtomicUsize>>,
+    Extension(num_jobs): Extension<Arc<AtomicUsize>>,
     Json(data): Json<JobSubmissionHash>,
 ) -> Result<(StatusCode, Json<SubmitResponse>), WorkerError> {
 
@@ -59,8 +59,8 @@ pub async fn handle_submit_hash(
     let mut module_cache = module_cache.lock().await;
     let module = module_cache.get(&data.module_hash).ok_or_else(|| WorkerError::ModuleNotFound(data.module_hash.clone()))?;
 
-    // acquire a queue ticket to increase the active job count
-    let ticket = QueueTicket::acquire(queue_len.clone());
+    // acquire a job ticket to increase the active job count
+    let ticket = JobTicket::acquire(num_jobs.clone());
 
     let buf = run_wasm_module((*engine).clone(), (*module).clone(), data.manifest.call_args, ticket).await?;
 

@@ -3,13 +3,13 @@ use reqwest::Client;
 use tracing::{error, info};
 use uuid::Uuid;
 
-use crate::{errors::WorkerError, INITIAL_CREDITS};
+use crate::{errors::WorkerError, MAX_CREDITS};
 
 /// Register this worker with the orchestrator, returning the assigned worker_id.
 pub async fn register_with_orchestrator(client: &Client, base: &str, port: u16) -> Result<Uuid, WorkerError> {
     let url = format!("{}/register_worker", base);
     info!("registering with orchestrator at {}", url);
-    let req = RegisterWorkerRequest { port, initial_credits: INITIAL_CREDITS };
+    let req = RegisterWorkerRequest { port, initial_credits: MAX_CREDITS };
 
     let resp = client.post(&url).json(&req).send().await.map_err(|e| {
         WorkerError::Registration(format!("failed to send register request: {}", e))

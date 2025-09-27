@@ -1,5 +1,5 @@
 mod module_cache;
-mod queue_ticket;
+mod job_ticket;
 mod errors;
 mod runner;
 mod registration;
@@ -19,10 +19,16 @@ use reqwest::Client;
 
 use wasmer::{Module, Engine};
 
+use crate::heartbeat::start_heartbeat_loop;
 use crate::module_cache::ModuleCache;
 use crate::errors::WorkerError;
 use crate::registration::{register_with_orchestrator, unregister_with_orchestrator};
 use crate::submission::{handle_submit_wasm, handle_submit_hash};
+
+
+// Basic constants for config for now
+const HEARTBEAT_INTERVAL_MS: u64 = 500;
+const MAX_CREDITS: usize = 1;
 
 
 #[tokio::main]
@@ -57,10 +63,11 @@ async fn main() -> Result<(), WorkerError> {
     };
 
     let client = Client::new();
-
     let worker_id = register_with_orchestrator(&client, &base, port).await?;
+    let num_jobs = Arc::new(AtomicUsize::new(0));
+    let seq = Arc::new(AtomicUsize::new(0));
 
-    let queue_len = Arc::new(AtomicUsize::new(0));
+    let heartbeat_shutdown_tx = start_heartbeat_loop(client.clone(), base.clone(), worker_id, num_jobs.clone(), seq.clone());
 
     // build and serve app using the already-bound listener
     let app = Router::new()
@@ -68,7 +75,9 @@ async fn main() -> Result<(), WorkerError> {
         .route("/submit_hash", post(handle_submit_hash))
         .layer(Extension(engine)) // inject engine
         .layer(Extension(module_cache)) // inject module cache
-        .layer(Extension(queue_len)); // inject queue length
+        .layer(Extension(num_jobs)) // inject number of jobs
+        .layer(Extension(seq)); // inject sequence number
+
 
     let server = axum::serve(listener, app);
     let graceful = server.with_graceful_shutdown(async move {
@@ -76,6 +85,9 @@ async fn main() -> Result<(), WorkerError> {
             error!("failed to listen for ctrl_c: {}", e);
             return;
         }
+
+        // stop heartbeat loop
+        heartbeat_shutdown_tx.send(()).map_err(|_| error!("failed to stop heartbeat loop")).ok();
 
         // unregister on shutdown
         info!("shutdown signal received, unregistering from orchestrator...");

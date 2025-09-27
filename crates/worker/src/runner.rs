@@ -3,11 +3,11 @@ use std::io::Read;
 use wasmer::{Engine, Module};
 use wasmer_wasix::{runners::wasi::{RuntimeOrEngine, WasiRunner}, Pipe};
 
-use crate::{errors::WorkerError, queue_ticket::QueueTicket};
+use crate::{errors::WorkerError, job_ticket::JobTicket};
 
 
 /// Runs the inputted wasm module in a separate tokio spawn_blocking thread
-pub async fn run_wasm_module(engine: Engine, module: Module, run_args: Vec<String>, ticket: QueueTicket) -> Result<String, WorkerError> {
+pub async fn run_wasm_module(engine: Engine, module: Module, run_args: Vec<String>, ticket: JobTicket) -> Result<String, WorkerError> {
     let run_result = tokio::task::spawn_blocking(move || -> Result<String, WorkerError> {
 
         let _ticket = ticket; // keep ticket alive for the duration of this function
