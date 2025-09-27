@@ -1,112 +1,18 @@
+mod registry;
+mod errors;
+mod handlers;
+
 use std::net::SocketAddr;
 
-use axum::{body::Bytes, extract::Extension, http::StatusCode, response::IntoResponse, routing::post, Json, Router, ServiceExt};
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
+use axum::{extract::Extension, routing::post, Router};
 use tracing::{error, info};
-use uuid::Uuid;
 use clap::Parser;
-use axum::extract::ConnectInfo;
 use tower_http::trace::TraceLayer;
 
-mod registry;
 use registry::WorkerRegistry;
-use mini_lambda_proto::{RegisterWorkerRequest, RegisterWorkerResponse, UnregisterWorkerRequest};
 
-// proto types aren't required by this handler (no-body request_worker). Keep proto in the workspace for other crates.
+use crate::handlers::{register_worker, request_worker, unregister_worker, update_credits};
 
-#[derive(Error, Debug)]
-pub enum OrchestratorError {
-    #[error("no workers registered")]
-    NoWorkers,
-
-    #[error("worker not found")]
-    WorkerNotFound,
-}
-
-impl IntoResponse for OrchestratorError {
-    fn into_response(self) -> axum::response::Response {
-        let (status, body) = match &self {
-            OrchestratorError::NoWorkers => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
-            OrchestratorError::WorkerNotFound => (StatusCode::NOT_FOUND, self.to_string()),
-        };
-        (status, Json(serde_json::json!({ "error": body }))).into_response()
-    }
-}
-
-
-// Reuse proto types for register request/response. We expect workers to send { port: u16 }.
-
-#[derive(Deserialize, Debug)]
-struct UpdateCreditsRequest {
-    worker_id: Uuid,
-    credits: usize,
-}
-
-#[derive(Serialize, Debug)]
-struct OrchestratorSubmitResponse {
-    job_id: Uuid,
-    worker_endpoint: String,
-}
-
-async fn register_worker(
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    Extension(registry): Extension<WorkerRegistry>,
-    Json(req): Json<RegisterWorkerRequest>,
-) -> (StatusCode, Json<RegisterWorkerResponse>) {
-
-    info!("registering worker: {:?}", req);
-    // build endpoint from peer.ip() and the port the worker reports
-    let endpoint = format!("http://{}:{}", peer.ip(), req.port);
-    let id = registry.register(endpoint, req.initial_credits).await;
-    (
-        StatusCode::CREATED,
-        Json(RegisterWorkerResponse { worker_id: id }),
-    )
-}
-
-async fn unregister_worker(
-    Extension(registry): Extension<WorkerRegistry>,
-    Json(req): Json<UnregisterWorkerRequest>,
-) -> Result<StatusCode, OrchestratorError> {
-
-    info!("unregistering worker with id: {:?}", req.worker_id);
-    if registry.unregister(req.worker_id).await {
-        Ok(StatusCode::OK)
-    } else {
-        Err(OrchestratorError::WorkerNotFound)
-    }
-}
-
-async fn update_credits(
-    Extension(registry): Extension<WorkerRegistry>,
-    Json(req): Json<UpdateCreditsRequest>,
-) -> Result<StatusCode, OrchestratorError> {
-
-    info!("updating credits for worker: {:?}", req);
-    if registry.update_credits(req.worker_id, req.credits).await {
-        Ok(StatusCode::OK)
-    } else {
-        Err(OrchestratorError::WorkerNotFound)
-    }
-}
-
-async fn request_worker(
-    Extension(registry): Extension<WorkerRegistry>,
-) -> Result<(StatusCode, Json<OrchestratorSubmitResponse>), OrchestratorError> {
-
-    info!("requesting worker");
-    if let Some((_id, endpoint)) = registry.pick_and_decrement().await {
-        let resp = OrchestratorSubmitResponse {
-            job_id: Uuid::new_v4(),
-            worker_endpoint: endpoint,
-        };
-
-        Ok((StatusCode::CREATED, Json(resp)))
-    } else {
-        Err(OrchestratorError::NoWorkers)
-    }
-}
 
 #[tokio::main]
 async fn main() {
