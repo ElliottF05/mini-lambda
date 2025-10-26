@@ -1,5 +1,6 @@
 use std::{collections::VecDeque, sync::Arc, time::SystemTime};
 
+use mini_lambda_proto::JobSummary;
 use tokio::sync::{oneshot, Mutex};
 use uuid::Uuid;
 
@@ -46,5 +47,12 @@ impl PendingQueue {
         } else {
             None
         }
+    }
+
+    pub async fn snapshot(&self) -> Vec<JobSummary> {
+        let q = self.inner.lock().await;
+        q.iter()
+            .map(|j| JobSummary { job_id: j.job_id, submitted_at: j.submitted_at })
+            .collect()
     }
 }

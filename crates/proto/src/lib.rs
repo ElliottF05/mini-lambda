@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use serde::{Deserialize, Serialize, Deserializer, Serializer};
 use uuid::Uuid;
 use sha2::{Digest, Sha256};
@@ -74,14 +76,40 @@ pub struct UnregisterWorkerRequest {
     pub worker_id: Uuid,
 }
 
+/// Response returned by orchestrator when a worker registers
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RegisterWorkerResponse {
     pub worker_id: Uuid,
 }
 
+/// Update sent by workers to the orchestrator as a heartbeat
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HeartbeatUpdate {
     pub worker_id: Uuid,
     pub seq: usize,
     pub credits: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WorkerInfo {
+    pub endpoint: String,
+    pub id: Uuid,
+    pub credits: usize,
+    pub seq: usize,
+    pub last_seen: SystemTime
+}
+
+/// Monitoring info returned by the orchestrator
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MonitoringInfo {
+    pub workers: Vec<WorkerInfo>,
+    pub pending: Vec<JobSummary>,
+}
+
+/// A lightweight summary of a job currently in the orchestrator queue, does not
+/// include the responder channel.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct JobSummary {
+    pub job_id: Uuid,
+    pub submitted_at: std::time::SystemTime,
 }

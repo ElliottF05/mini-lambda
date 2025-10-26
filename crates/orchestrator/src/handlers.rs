@@ -1,14 +1,14 @@
 use std::{net::SocketAddr, time::Duration};
 
 use axum::{extract::ConnectInfo, Extension, Json};
-use mini_lambda_proto::{RegisterWorkerRequest, RegisterWorkerResponse, UnregisterWorkerRequest};
+use mini_lambda_proto::{MonitoringInfo, RegisterWorkerRequest, RegisterWorkerResponse, UnregisterWorkerRequest, WorkerInfo};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::{errors::OrchestratorError, queue::{Job, PendingQueue}, registry::WorkerRegistry};
+use crate::{errors::OrchestratorError, queue::{Job, PendingQueue}, registry::{WorkerRegistry}};
 
 const QUEUE_TIMEOUT_SECS: u64 = 30;
 
@@ -120,4 +120,21 @@ pub async fn request_worker(
             }
         }
     }
+}
+
+pub async fn get_monitoring_info(
+    Extension(registry): Extension<WorkerRegistry>,
+    Extension(pending): Extension<PendingQueue>,
+) -> (StatusCode, Json<MonitoringInfo>) {
+    // snapshot registry
+    let workers_map = registry.snapshot().await;
+    let workers: Vec<WorkerInfo> = workers_map.into_values().collect();
+
+    // snapshot pending queue (non-destructive)
+    let pending = pending.snapshot().await;
+
+    (
+        StatusCode::OK,
+        Json(MonitoringInfo { workers, pending }),
+    )
 }

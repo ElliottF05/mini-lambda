@@ -6,14 +6,14 @@ mod queue;
 
 use std::net::SocketAddr;
 
-use axum::{extract::Extension, routing::post, Router};
+use axum::{extract::Extension, routing::{get, post}, Router};
 use tracing::{error, info};
 use clap::Parser;
 use tower_http::trace::TraceLayer;
 
 use registry::WorkerRegistry;
 
-use crate::{handlers::{register_worker, request_worker, unregister_worker, update_credits}, heartbeat::handle_heartbeat_received, queue::PendingQueue};
+use crate::{handlers::{get_monitoring_info, register_worker, request_worker, unregister_worker, update_credits}, heartbeat::handle_heartbeat_received, queue::PendingQueue};
 
 const MAX_QUEUE_SIZE: usize = 10;
 
@@ -40,7 +40,8 @@ async fn main() {
         .route("/unregister_worker", post(unregister_worker))
         .route("/update_credits", post(update_credits))
         .route("/request_worker", post(request_worker))
-        .route("/heartbeat", post(handle_heartbeat_received)) // <-- new route to accept worker heartbeats
+        .route("/heartbeat", post(handle_heartbeat_received))
+        .route("/monitoring_info", get(get_monitoring_info))
         .layer(TraceLayer::new_for_http()) // add request tracing
         .layer(Extension(registry)) // inject registry
         .layer(Extension(pending_queue)); // inject pending queue

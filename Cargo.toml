@@ -4,8 +4,8 @@ members = [
   "crates/client",
   "crates/client/test-wasm",
   "crates/worker",
-  "crates/orchestrator",
-  
+  "crates/orchestrator", 
+  "crates/orchestrator-tui",
 ]
 resolver = "2"
 

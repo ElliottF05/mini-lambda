@@ -1,16 +1,8 @@
+use mini_lambda_proto::WorkerInfo;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::SystemTime};
 use tokio::sync::Mutex;
 use uuid::Uuid;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WorkerInfo {
-    pub endpoint: String,
-    pub id: Uuid,
-    pub credits: usize,
-    pub seq: usize,
-    pub last_seen: SystemTime
-}
 
 /// A small wrapper around the in-memory worker registry used by the orchestrator.
 #[derive(Clone, Default)]
