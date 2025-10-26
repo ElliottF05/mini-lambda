@@ -4,11 +4,11 @@
 
 ## Overview
 
-mini-lambda is a lightweight, Rust-powered serverless compute platform for running WebAssembly in distributed sandboxed worker processes.
+`mini-lambda` is a lightweight, Rust-powered serverless compute platform for running WebAssembly in distributed sandboxed worker processes.
 
 ## Status
 
-**In development!** APIs and internals are changing frequently so expect breaking changes while the project evolves
+**In development!** I'm always developing and adding new features, so this README might be outdated.
 
 ## Key features
 
@@ -78,9 +78,3 @@ Run tests:
   ```bash
   cargo test
   ```
-
---
-
-## Contributing
-
-This project is early stage so contributions, ideas, bug reports are welcome! Feel free to open an issue or PR, or contact me at elliotthfaa@gmail.com!
