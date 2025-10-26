@@ -23,10 +23,6 @@ impl WorkerRegistry {
         Self { inner: Arc::new(Mutex::new(HashMap::new())) }
     }
 
-    pub fn from_map(map: HashMap<Uuid, WorkerInfo>) -> Self {
-        Self { inner: Arc::new(Mutex::new(map)) }
-    }
-
     /// Register a new worker endpoint and return the assigned worker id.
     pub async fn register(&self, endpoint: String, credits: usize) -> Uuid {
         let id = Uuid::new_v4();
@@ -57,6 +53,12 @@ impl WorkerRegistry {
         }
     }
 
+    /// Get worker info by id.
+    pub async fn get_worker_info(&self, worker_id: Uuid) -> Option<WorkerInfo> {
+        let m = self.inner.lock().await;
+        m.get(&worker_id).cloned()
+    }
+
     /// Choose the worker with the most credits, decrement its credits count and return (id, endpoint).
     pub async fn pick_and_decrement(&self) -> Option<(Uuid, String)> {
         let mut m = self.inner.lock().await;
@@ -67,7 +69,7 @@ impl WorkerRegistry {
         let mut chosen_id: Option<Uuid> = None;
         let mut greatest: Option<usize> = None;
         for (id, info) in m.iter() {
-            if greatest.is_none() || (info.credits > greatest.unwrap() && info.credits > 0) {
+            if info.credits > 0 && (greatest.is_none() || info.credits > greatest.unwrap()) {
                 greatest = Some(info.credits);
                 chosen_id = Some(*id);
             }

@@ -2,6 +2,7 @@ mod registry;
 mod errors;
 mod handlers;
 mod heartbeat;
+mod queue;
 
 use std::net::SocketAddr;
 
@@ -12,7 +13,9 @@ use tower_http::trace::TraceLayer;
 
 use registry::WorkerRegistry;
 
-use crate::{handlers::{register_worker, request_worker, unregister_worker, update_credits}, heartbeat::handle_heartbeat_received};
+use crate::{handlers::{register_worker, request_worker, unregister_worker, update_credits}, heartbeat::handle_heartbeat_received, queue::PendingQueue};
+
+const MAX_QUEUE_SIZE: usize = 10;
 
 
 #[tokio::main]
@@ -28,6 +31,7 @@ async fn main() {
     let opts = Opts::parse();
 
     let registry = WorkerRegistry::new();
+    let pending_queue = PendingQueue::new(MAX_QUEUE_SIZE);
 
     // bind to configured address
     let listener = tokio::net::TcpListener::bind(&opts.bind).await.unwrap();
@@ -38,7 +42,8 @@ async fn main() {
         .route("/request_worker", post(request_worker))
         .route("/heartbeat", post(handle_heartbeat_received)) // <-- new route to accept worker heartbeats
         .layer(TraceLayer::new_for_http()) // add request tracing
-        .layer(Extension(registry)); // inject registry
+        .layer(Extension(registry)) // inject registry
+        .layer(Extension(pending_queue)); // inject pending queue
 
     info!("orchestrator listening on {}", opts.bind);
 

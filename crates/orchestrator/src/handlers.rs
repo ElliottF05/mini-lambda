@@ -1,13 +1,16 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 
 use axum::{extract::ConnectInfo, Extension, Json};
 use mini_lambda_proto::{RegisterWorkerRequest, RegisterWorkerResponse, UnregisterWorkerRequest};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
+use tokio::sync::oneshot;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::{errors::OrchestratorError, registry::WorkerRegistry};
+use crate::{errors::OrchestratorError, queue::{Job, PendingQueue}, registry::WorkerRegistry};
+
+const QUEUE_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Deserialize, Debug)]
 pub struct UpdateCreditsRequest {
@@ -65,6 +68,7 @@ pub async fn update_credits(
 
 pub async fn request_worker(
     Extension(registry): Extension<WorkerRegistry>,
+    Extension(pending_queue): Extension<PendingQueue>,
 ) -> Result<(StatusCode, Json<OrchestratorSubmitResponse>), OrchestratorError> {
 
     info!("requesting worker");
@@ -73,9 +77,43 @@ pub async fn request_worker(
             job_id: Uuid::new_v4(),
             worker_endpoint: endpoint,
         };
-
         Ok((StatusCode::CREATED, Json(resp)))
+
     } else {
-        Err(OrchestratorError::NoWorkers)
+        info!("no available workers, enqueueing job");
+        // no available workers, enqueue the job and add a timeout
+        let (tx, rx ) = oneshot::channel();
+        let job_id = Uuid::new_v4();
+        let job = Job {
+            job_id,
+            submitted_at: std::time::SystemTime::now(),
+            responder: tx,
+        };
+
+        // enqueue the job (or return 429 error if queue is full)
+        pending_queue.enqueue(job).await.map_err(|_| OrchestratorError::QueueFull)?;
+
+        // wait for a worker to become available or timeout
+        let timeout = Duration::from_secs(QUEUE_TIMEOUT_SECS);
+        match tokio::time::timeout(timeout, rx).await {
+            Ok(Ok(endpoint)) => {
+                info!("job {} dequeued from queue and assigned to worker at {}", job_id, endpoint);
+                let resp = OrchestratorSubmitResponse {
+                    job_id,
+                    worker_endpoint: endpoint,
+                };
+                Ok((StatusCode::CREATED, Json(resp)))
+            }
+            Ok(Err(_cancelled)) => {
+                // sender dropped, treat as server error
+                Err(OrchestratorError::Internal)
+            }
+            Err(_elapsed) => {
+                // timeout elapsed, remove job from queue
+                info!("job {} timed out waiting for worker", job_id);
+                let _ = pending_queue.remove_job_by_id(job_id).await;
+                Err(OrchestratorError::RequestTimeout)
+            }
+        }
     }
 }
