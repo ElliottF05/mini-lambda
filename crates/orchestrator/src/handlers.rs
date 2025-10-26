@@ -72,6 +72,10 @@ pub async fn request_worker(
 ) -> Result<(StatusCode, Json<OrchestratorSubmitResponse>), OrchestratorError> {
 
     info!("requesting worker");
+    if registry.len().await == 0 {
+        return Err(OrchestratorError::NoWorkers);
+    }
+
     if let Some((_id, endpoint)) = registry.pick_and_decrement().await {
         let resp = OrchestratorSubmitResponse {
             job_id: Uuid::new_v4(),

@@ -42,6 +42,10 @@ impl WorkerRegistry {
         self.inner.lock().await.remove(&worker_id).is_some()
     }
 
+    pub async fn len(&self) -> usize {
+        self.inner.lock().await.len()
+    }
+
     /// Update the approximate credits for a worker. Returns true if the worker existed.
     pub async fn update_credits(&self, worker_id: Uuid, credits: usize) -> bool {
         let mut m = self.inner.lock().await;
