@@ -4,19 +4,3 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-anyhow = { workspace = true }
-thiserror = { workspace = true }
-uuid = { workspace = true }
-axum = { workspace = true }
-wasmer = { version = "6.1.0-rc.3" }
-wasmer-wasix = { version = "0.601.0-rc.3" }
-wasmer-types = { version = "6.1.0-rc.3" }
-mini-lambda-proto = { path = "../proto" }
-lru = "0.16.0"
-reqwest = { workspace = true, features = ["json", "rustls-tls"] }
-clap = { workspace = true, features = ["derive"] }
