@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  "crates/proto",
+  "crates/shared",
   "crates/client",
   "crates/client/test-wasm",
   "crates/worker",
@@ -12,3 +12,8 @@ resolver = "2"
 edition = "2024"
 
 [workspace.dependencies]
+tonic = { version = "0.14.2", features = [] }
+prost = { version = "0.14.3", features = [] }
+tonic-prost-build = { version = "0.14.2", features = [] }
+tonic-prost = { version = "0.14.2", features = [] }
+tokio = { version = "1.49.0", features = ["full"] }

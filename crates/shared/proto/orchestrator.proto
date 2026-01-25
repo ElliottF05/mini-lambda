@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package orchestrator;
+
+// The Orchestrator service definition.
+service Orchestrator {
+    // Requests a worker to handle a task.
+    rpc RequestWorker (WorkerRequest) returns (WorkerResponse);
+}
+
+// The request message (empty for now)
+message WorkerRequest {}
+
+// The response message containing the worker details.
+message WorkerResponse {
+    string worker_address = 1;
+    // string security_token = 2;
+}
