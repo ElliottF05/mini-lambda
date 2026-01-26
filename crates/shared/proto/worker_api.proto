@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package worker_api;
+
+// The API exposed by the Orchestrator to the Worker.
+service WorkerApi {;
+}

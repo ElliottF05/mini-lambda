@@ -1,5 +1,3 @@
-pub mod orchestrator_proto {
-    tonic::include_proto!("orchestrator");
-}
-
-pub use orchestrator_proto::*;
+tonic::include_proto!("cli_api");
+tonic::include_proto!("worker_api");
+tonic::include_proto!("executor");

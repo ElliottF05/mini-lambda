@@ -1,9 +1,9 @@
 syntax = "proto3";
 
-package orchestrator;
+package cli_api;
 
-// The Orchestrator service definition.
-service Orchestrator {
+// The API exposed by the Orchestrator to the CLI.
+service CliApi {
     // Requests a worker to handle a task.
     rpc RequestWorker (WorkerRequest) returns (WorkerResponse);
 }

@@ -1,6 +1,10 @@
 [package]
-name = "mini-lambda-worker"
+name = "worker"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+shared = { path = "../shared" }
+tonic = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tokio-stream = { version = "0.1.18", features = [] }

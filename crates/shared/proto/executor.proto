@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package executor;
+
+// The job execution API exposed by the Worker (Executor) to the Client.
+service Executor {
+    // Executes a job with the given payload.
+    rpc ExecuteJob (JobRequest) returns (JobResponse);
+}
+
+// The request message containing the job payload.
+message JobRequest {
+    bytes wasm_bytes = 1;
+}
+
+// The response message containing the job result.
+message JobResponse {
+    bytes result = 1;
+}

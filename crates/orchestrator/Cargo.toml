@@ -1,9 +1,9 @@
 [package]
-name = "mini-lambda-orchestrator"
+name = "orchestrator"
 version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-mini-lambda-shared = { path = "../shared" }
+shared = { path = "../shared" }
 tonic = { workspace = true }
 tokio = { workspace = true, features = ["full"] }

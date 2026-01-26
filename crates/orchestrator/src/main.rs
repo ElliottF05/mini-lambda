@@ -1,14 +1,14 @@
 use tonic::transport::Server;
 use tonic::{Request, Status, Response};
 
-use mini_lambda_shared::orchestrator_proto::orchestrator_server::{Orchestrator, OrchestratorServer};
-use mini_lambda_shared::orchestrator_proto::{WorkerRequest, WorkerResponse};
+use shared::cli_api_server::{CliApi, CliApiServer};
+use shared::{WorkerRequest, WorkerResponse};
 
 #[derive(Debug, Default)]
-struct OrchestratorService {}
+struct Orchestrator {}
 
 #[tonic::async_trait]
-impl Orchestrator for OrchestratorService {
+impl CliApi for Orchestrator {
 
     async fn request_worker(
         &self, 
@@ -26,10 +26,10 @@ impl Orchestrator for OrchestratorService {
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "0.0.0.0:50051".parse().unwrap();
-    let orchestrator_service = OrchestratorService::default();
+    let orchestrator = Orchestrator::default();
     
     Server::builder()
-        .add_service(OrchestratorServer::new(orchestrator_service))
+        .add_service(CliApiServer::new(orchestrator))
         .serve(addr)
         .await?;
 
