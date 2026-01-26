@@ -7,3 +7,4 @@ edition.workspace = true
 shared = { path = "../shared" }
 tonic = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+tokio-stream = { workspace = true, features = []}

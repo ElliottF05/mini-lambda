@@ -17,3 +17,4 @@ prost = { version = "0.14.3", features = [] }
 tonic-prost-build = { version = "0.14.2", features = [] }
 tonic-prost = { version = "0.14.2", features = [] }
 tokio = { version = "1.49.0", features = ["full"] }
+tokio-stream = { version = "0.1.18", features = [] }
