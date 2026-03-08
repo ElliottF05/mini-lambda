@@ -64,13 +64,15 @@ type OutboundTx = mpsc::Sender<Result<OrchestratorMessage, Status>>;
 impl Orchestrator {
     async fn handle_worker_registration(&self, tx: OutboundTx, registration: shared::WorkerRegistration) {
         println!("Handling worker registration: {:?}", registration);
+
+        self.registry.write().await.register_worker(registration.address);
+
         // send registration ack back to worker
         let ack = OrchestratorMessage {
             message: Some(orchestrator_message::Message::RegistrationAck(
                 RegistrationAck {}
             ))
         };
-
         if tx.send(Ok(ack)).await.is_err() {
             eprintln!("Failed to send registration ack to worker");
         } else {

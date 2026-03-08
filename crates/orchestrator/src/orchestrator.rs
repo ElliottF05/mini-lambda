@@ -9,7 +9,7 @@ use crate::registry::WorkerRegistry;
 #[derive(Debug, Clone)]
 pub struct Orchestrator {
     // note: all shared state fields should use Arc<RwLock<...>> for thread safety
-    registry: Arc<RwLock<WorkerRegistry>>,
+    pub(crate) registry: Arc<RwLock<WorkerRegistry>>,
 }
 
 impl Default for Orchestrator {

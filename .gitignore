@@ -24,3 +24,6 @@ target
 # Added by cargo
 
 /target
+
+# Other (added by me)
+ROADMAP.md

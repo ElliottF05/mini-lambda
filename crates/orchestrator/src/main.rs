@@ -14,6 +14,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "0.0.0.0:50051".parse()?;
     let orchestrator = Orchestrator::default();
     
+    println!("Orchestrator listening on {}", addr);
     Server::builder()
         .add_service(CliApiServer::new(orchestrator.clone()))
         .add_service(WorkerApiServer::new(orchestrator.clone()))

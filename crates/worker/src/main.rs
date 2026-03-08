@@ -36,7 +36,7 @@ impl Executor for Worker {
 
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let listener = TcpListener::bind("0.0.0.0:0").await?;
     let addr = listener.local_addr()?;
 
     let worker = Worker { addr };
@@ -88,7 +88,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // send the initial registration message
     tx.send(WorkerMessage {
-        message: Some(worker_message::Message::Registration(WorkerRegistration {}))
+        message: Some(worker_message::Message::Registration(WorkerRegistration { address: addr.to_string() }))
     }).await?;
 
     // keep the main task alive
