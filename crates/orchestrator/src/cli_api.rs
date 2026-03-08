@@ -14,8 +14,10 @@ impl CliApi for Orchestrator {
         _request: Request<WorkerRequest>
     ) -> Result<Response<WorkerResponse>, Status> {
 
+        // TODO: process error here instead of unwrapping it
+        let worker = self.registry.read().await.get_worker().unwrap().clone();
         let response = WorkerResponse {
-            worker_address: "worker-1-address".to_string(),
+            worker_address: worker.address
         };
 
         return Ok(Response::new(response));
