@@ -11,7 +11,7 @@ use crate::orchestrator::Orchestrator;
 /// Main entry point for the Orchestrator server binary.
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "0.0.0.0:50051".parse()?;
+    let addr = "127.0.0.1:50051".parse()?;
     let orchestrator = Orchestrator::default();
     
     println!("Orchestrator listening on {}", addr);

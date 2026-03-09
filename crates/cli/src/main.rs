@@ -1,3 +1,5 @@
+use std::io::Read;
+
 use tonic::Request;
 
 use shared::cli_api_client::CliApiClient;
@@ -16,8 +18,10 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let worker_endpoint = "http://".to_string() + &worker_address;
     println!("Worker endpoint: {}", worker_endpoint);
 
+    // TODO: parse an argument instead for the file path
+    let wasm_bytes = std::fs::read("./crates/cli/test-wasm/test-wasm.wasm").unwrap();
     let mut executor_client = ExecutorClient::connect(worker_endpoint).await?;
-    let job_request = JobRequest { wasm_bytes: vec![] };
+    let job_request = JobRequest { wasm_bytes: wasm_bytes };
     let response = executor_client.execute_job(Request::new(job_request)).await?;
     println!("Job execution response: {:?}", String::from_utf8(response.into_inner().result));
 

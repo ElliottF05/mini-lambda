@@ -1,4 +1,6 @@
+use std::io::Read;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -6,6 +8,10 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 use tonic::transport::Server;
 use tonic::{Request, Status, Response};
+use wasmer::Module;
+use wasmer_wasix::runners::wasi::{RuntimeOrEngine, WasiRunner};
+use wasmer_wasix::{Pipe, PluggableRuntime};
+use wasmer_wasix::runtime::task_manager::tokio::TokioTaskManager;
 
 use shared::executor_server::{Executor, ExecutorServer};
 use shared::{JobRequest, JobResponse, WorkerMessage, WorkerRegistration};
@@ -16,6 +22,20 @@ use shared::worker_message;
 #[derive(Debug)]
 struct Worker {
     addr: SocketAddr,
+    wasm_runtime: PluggableRuntime,
+    // TODO, look into wasmer's built-in caching: 
+    // https://docs.rs/crate/wasmer-wasix/latest/source/src/runtime/module_cache/mod.rs
+}
+
+impl Worker {
+    pub fn new(addr: SocketAddr) -> Worker {
+        let tokio_task_manager = TokioTaskManager::new(tokio::runtime::Handle::current());
+        let runtime = PluggableRuntime::new(Arc::new(tokio_task_manager));
+        return Worker {
+            addr,
+            wasm_runtime: runtime
+        }
+    }
 }
 
 #[tonic::async_trait]
@@ -23,23 +43,55 @@ impl Executor for Worker {
 
     async fn execute_job(
         &self, 
-        _request: Request<JobRequest>
+        request: Request<JobRequest>
     ) -> Result<Response<JobResponse>, Status> {
+        println!("Received job to execute...");
+
+        let wasm_bytes = request.into_inner().wasm_bytes;
+        let runtime = self.wasm_runtime.clone();
+
+        // Run the compilation and wasm execution on a separate blocking task
+        // TODO: handle errors everywhere in here instead of unwrapping
+        let output_buf = tokio::task::spawn_blocking(move || {
+            // Compile the wasm module
+            let wasm_module = Module::new(&runtime.engine, wasm_bytes).unwrap();
+
+            // Create pipes to capture stdout
+            let (stdout_tx, mut stdout_rx) = Pipe::channel();
+            {
+                // Configure the runtime environment and run it
+                let mut runner = WasiRunner::new();
+                runner.with_stdout(Box::new(stdout_tx));
+                // TODO: add args, file system, etc
+
+                runner.run_wasm(
+                    RuntimeOrEngine::Runtime(Arc::new(runtime)), 
+                    "unnamed", 
+                    wasm_module, 
+                    wasmer_types::ModuleHash::random()
+                ).unwrap();
+            }
+
+            // Capture stdout
+            let mut output_buf = vec![];
+            stdout_rx.read_to_end(&mut output_buf).unwrap();
+
+            output_buf
+        }).await.unwrap();
 
         let response = JobResponse {
-            result: format!("Job executed by worker at {}", self.addr).into_bytes(),
+            result: output_buf,
         };
-
         return Ok(Response::new(response));
     }
 }
 
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let listener = TcpListener::bind("0.0.0.0:0").await?;
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
 
-    let worker = Worker { addr };
+    let worker = Worker::new(addr);
     
     // start the executor server
     println!("Worker listening on {}", addr);
