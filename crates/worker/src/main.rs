@@ -47,7 +47,9 @@ impl Executor for Worker {
     ) -> Result<Response<JobResponse>, Status> {
         println!("Received job to execute...");
 
-        let wasm_bytes = request.into_inner().wasm_bytes;
+        let request = request.into_inner();
+        let wasm_bytes = request.wasm_bytes;
+        let args = request.args;
         let runtime = self.wasm_runtime.clone();
 
         // Run the compilation and wasm execution on a separate blocking task
@@ -62,7 +64,8 @@ impl Executor for Worker {
                 // Configure the runtime environment and run it
                 let mut runner = WasiRunner::new();
                 runner.with_stdout(Box::new(stdout_tx));
-                // TODO: add args, file system, etc
+                runner.with_args(args);
+                // TODO: env, file system, etc
 
                 runner.run_wasm(
                     RuntimeOrEngine::Runtime(Arc::new(runtime)), 

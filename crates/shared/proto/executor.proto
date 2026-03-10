@@ -9,8 +9,10 @@ service Executor {
 }
 
 // The request message containing the job payload.
+// Contains the wasm itself (as bytes), as well as arguments.
 message JobRequest {
     bytes wasm_bytes = 1;
+    repeated string args = 2;
 }
 
 // The response message containing the job result.
