@@ -11,6 +11,7 @@ pub struct WorkerRegistry {
 }
 
 impl WorkerRegistry {
+    /// Create a new WorkerRegistry.
     pub fn new() -> Self {
         Self {
             inner: Vec::new(),

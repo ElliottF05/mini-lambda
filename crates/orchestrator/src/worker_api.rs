@@ -8,30 +8,33 @@ use shared::worker_api_server::WorkerApi;
 
 use crate::orchestrator::Orchestrator;
 
+/// Implementation of the WorkerApi service for Orchestrator.
 #[tonic::async_trait]
 impl WorkerApi for Orchestrator {
     type ConnectWorkerStream = ReceiverStream<Result<OrchestratorMessage, Status>>;
 
+    /// A function exposed by the Orchestrator that Worker instances call to connect
+    /// to this Orchestrator.
     async fn connect_worker(
         &self,
         request: Request<Streaming<WorkerMessage>>,
     ) -> Result<Response<Self::ConnectWorkerStream>, Status> {
 
-        // extract inbound stream and create outbound channel
+        // Extract inbound stream and create outbound channel
         let mut inbound = request.into_inner();
         let (tx, rx) = mpsc::channel(32);
 
-        // spawn a task to handle the bidirectional communication
-        let orchestrator = self.clone(); // clone for move into async task
+        // Spawn a task to handle the bidirectional communication
+        let orchestrator = self.clone(); // Clone for move into async task
         tokio::spawn(async move {
             while let Some(result) = inbound.next().await {
                 match result {
                     Ok(worker_msg) => {
-                        // clone for move into async task
+                        // Clone for move into async task
                         let orchestrator = orchestrator.clone();
                         let tx = tx.clone();
 
-                        // handle different message types
+                        // Handle different message types
                         match worker_msg.message {
                             Some(worker_message::Message::Registration(registration)) => {
                                 tokio::spawn(async move {
@@ -62,12 +65,14 @@ impl WorkerApi for Orchestrator {
 // They all use the outbound tx channel to send messages back to the worker.
 type OutboundTx = mpsc::Sender<Result<OrchestratorMessage, Status>>;
 impl Orchestrator {
+
+    /// Handles an incoming Worker registration message.
     async fn handle_worker_registration(&self, tx: OutboundTx, registration: shared::WorkerRegistration) {
         println!("Handling worker registration: {:?}", registration);
 
         self.registry.write().await.register_worker(registration.address);
 
-        // send registration ack back to worker
+        // Send registration ack back to worker
         let ack = OrchestratorMessage {
             message: Some(orchestrator_message::Message::RegistrationAck(
                 RegistrationAck {}

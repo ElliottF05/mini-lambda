@@ -9,6 +9,8 @@ use crate::orchestrator::Orchestrator;
 #[tonic::async_trait]
 impl CliApi for Orchestrator {
 
+    /// A function exposed by the Orchestrator for the client/CLI to call to request
+    /// a worker be assigned to them to execute their job.
     async fn request_worker(
         &self, 
         _request: Request<WorkerRequest>
