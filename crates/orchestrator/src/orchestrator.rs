@@ -6,6 +6,7 @@ use crate::registry::WorkerRegistry;
 
 /// Orchestrator struct representing the main Orchestrator server component.
 /// It implements CliApi and WorkerApi services, see cli_api.rs and worker_api.rs for details.
+/// Orchestrator internally uses Arc<RwLock<_>> so can be cloned cheaply.
 #[derive(Debug, Clone)]
 pub struct Orchestrator {
     // note: all shared state fields should use Arc<RwLock<...>> for thread safety
