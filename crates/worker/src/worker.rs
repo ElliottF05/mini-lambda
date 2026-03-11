@@ -61,7 +61,9 @@ impl Worker {
         let mut worker_clone = worker.clone();
         tokio::spawn(async move {
             while let Some(result) = inbound.next().await {
-                worker_clone.handle_orchestrator_message(result).await;
+                if !worker_clone.handle_orchestrator_message(result).await {
+                    break;
+                }
             }
         });
 
@@ -73,7 +75,7 @@ impl Worker {
         worker
     }
 
-    pub async fn handle_orchestrator_message(&mut self, result: Result<OrchestratorMessage, Status>) {
+    pub async fn handle_orchestrator_message(&mut self, result: Result<OrchestratorMessage, Status>) -> bool {
         match result {
             Ok(orchestrator_msg) => {
                 match orchestrator_msg.message {
@@ -87,8 +89,12 @@ impl Worker {
             },
             Err(e) => {
                 eprintln!("Error receiving message from orchestrator: {:?}", e);
-                // TODO: what to do here?
+                // TODO: error here likely means broken pipe, necessitating reconnection,
+                // this is an issue that can be handled later?
+                return false;
             }
         }
+
+        return true;
     }
 }
