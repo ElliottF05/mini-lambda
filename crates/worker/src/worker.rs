@@ -58,7 +58,7 @@ impl Worker {
         };
 
         // Spawn a task to handle incoming messages from the orchestrator
-        let mut worker_clone = worker.clone();
+        let worker_clone = worker.clone();
         tokio::spawn(async move {
             while let Some(result) = inbound.next().await {
                 if !worker_clone.handle_orchestrator_message(result).await {
@@ -75,7 +75,7 @@ impl Worker {
         worker
     }
 
-    pub async fn handle_orchestrator_message(&mut self, result: Result<OrchestratorMessage, Status>) -> bool {
+    pub async fn handle_orchestrator_message(&self, result: Result<OrchestratorMessage, Status>) -> bool {
         match result {
             Ok(orchestrator_msg) => {
                 match orchestrator_msg.message {

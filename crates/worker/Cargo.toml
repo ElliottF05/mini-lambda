@@ -13,3 +13,4 @@ wasmer = { version = "7.0.1", features = ["cranelift"]}
 wasmer-compiler-cranelift = { version = "7.0.1" }
 wasmer-wasix = { version = "0.700.1" }
 wasmer-types = { version = "7.0.1" }
+thiserror = { workspace = true }

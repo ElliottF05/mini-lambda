@@ -8,6 +8,7 @@ use crate::worker::Worker;
 
 mod worker;
 mod executor;
+mod errors;
 
 /// Main entry point for the Worker server binary.
 #[tokio::main]

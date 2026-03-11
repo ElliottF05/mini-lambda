@@ -10,9 +10,14 @@ use shared::executor_server::Executor;
 use shared::{JobRequest, JobResponse};
 
 use crate::worker::Worker;
+use crate::errors::ExecutorError;
 
+/// Implementation of the Executor service for Worker.
 #[tonic::async_trait]
 impl Executor for Worker {
+
+    /// The function exposed by the Worker that the Client/CLI calls to execute
+    /// the submitted WASM job.
     async fn execute_job(
         &self, 
         request: Request<JobRequest>
@@ -25,10 +30,9 @@ impl Executor for Worker {
         let runtime = self.wasm_runtime.clone();
 
         // Run the compilation and wasm execution on a separate blocking task
-        // TODO: handle errors everywhere in here instead of unwrapping
-        let output_buf = tokio::task::spawn_blocking(move || {
+        let output_buf = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, ExecutorError> {
             // Compile the wasm module
-            let wasm_module = Module::new(&runtime.engine, wasm_bytes).unwrap();
+            let wasm_module = Module::new(&runtime.engine, wasm_bytes)?;
 
             // Create pipes to capture stdout
             let (stdout_tx, mut stdout_rx) = Pipe::channel();
@@ -39,20 +43,25 @@ impl Executor for Worker {
                 runner.with_args(args);
                 // TODO: env, file system, etc
 
+                // TODO: add program name
                 runner.run_wasm(
                     RuntimeOrEngine::Runtime(Arc::new(runtime)), 
                     "unnamed", 
                     wasm_module, 
                     wasmer_types::ModuleHash::random()
-                ).unwrap();
+                ).map_err(|e| ExecutorError::ExecutionFailed(e.to_string()))?;
             }
 
             // Capture stdout
             let mut output_buf = vec![];
-            stdout_rx.read_to_end(&mut output_buf).unwrap();
+            stdout_rx.read_to_end(&mut output_buf)
+                .map_err(|e| ExecutorError::OutputCaptureFailed(e.to_string()))?;
 
-            output_buf
-        }).await.unwrap();
+            Ok(output_buf)
+        })
+        .await
+        .map_err(|e| ExecutorError::WorkerPanicked(e))
+        ??;
 
         let response = JobResponse {
             result: output_buf,
