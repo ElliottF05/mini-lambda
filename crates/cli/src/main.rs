@@ -23,8 +23,26 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wasm_bytes = std::fs::read(wasm_path).unwrap();
     let mut executor_client = ExecutorClient::connect(worker_endpoint).await?;
     let job_request = JobRequest { wasm_bytes: wasm_bytes, args: wasm_args.to_vec() };
-    let response = executor_client.execute_job(Request::new(job_request)).await?;
-    println!("Job execution response: {:?}", String::from_utf8(response.into_inner().result));
+
+    let execution_result = executor_client.execute_job(Request::new(job_request)).await;
+    match execution_result {
+        Ok(job_response) => {
+            println!("Job execution response: {:?}", String::from_utf8(job_response.into_inner().result));
+        },
+        Err(e) => {
+            match e.code() {
+                tonic::Code::InvalidArgument => {
+                    println!("Job produced an error at compilation or runtime: {}", e.message());
+                },
+                tonic::Code::Internal => {
+                    println!("Worker failed with error: {}", e.message());
+                }
+                _ => {
+                    eprintln!("Received an unexepected error code {}, with message: {}", e.code(), e.message());
+                }
+            }
+        }
+    }
 
     Ok(())
 }
