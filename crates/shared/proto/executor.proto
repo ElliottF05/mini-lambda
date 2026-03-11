@@ -17,5 +17,6 @@ message JobRequest {
 
 // The response message containing the job result.
 message JobResponse {
-    bytes result = 1;
+    bytes stdout = 1;
+    bytes stderr = 2;
 }

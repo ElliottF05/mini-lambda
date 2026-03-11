@@ -27,7 +27,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let execution_result = executor_client.execute_job(Request::new(job_request)).await;
     match execution_result {
         Ok(job_response) => {
-            println!("Job execution response: {:?}", String::from_utf8(job_response.into_inner().result));
+            println!("Job execution response: {:?}", String::from_utf8(job_response.into_inner().stdout));
         },
         Err(e) => {
             match e.code() {

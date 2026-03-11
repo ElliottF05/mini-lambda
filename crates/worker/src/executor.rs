@@ -30,17 +30,23 @@ impl Executor for Worker {
         let runtime = self.wasm_runtime.clone();
 
         // Run the compilation and wasm execution on a separate blocking task
-        let output_buf = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, ExecutorError> {
+        let (stdout_buf, stderr_buf) = tokio::task::spawn_blocking(move || -> Result<(Vec<u8>, Vec<u8>), ExecutorError> {
             // Compile the wasm module
             let wasm_module = Module::new(&runtime.engine, wasm_bytes)?;
 
-            // Create pipes to capture stdout
+            // Create pipes to capture stdout and stderr, and buffers for their contents
             let (stdout_tx, mut stdout_rx) = Pipe::channel();
-            {
+            let (stderr_tx, mut stderr_rx) = Pipe::channel();
+            let mut stdout_buf = vec![];
+            let mut stderr_buf = vec![];
+            
+            let run_result = {
                 // Configure the runtime environment and run it
                 let mut runner = WasiRunner::new();
-                runner.with_stdout(Box::new(stdout_tx));
-                runner.with_args(args);
+                runner
+                    .with_stdout(Box::new(stdout_tx))
+                    .with_stderr(Box::new(stderr_tx))
+                    .with_args(args);
                 // TODO: env, file system, etc
 
                 // TODO: add program name
@@ -49,22 +55,27 @@ impl Executor for Worker {
                     "unnamed", 
                     wasm_module, 
                     wasmer_types::ModuleHash::random()
-                ).map_err(|e| ExecutorError::ExecutionFailed(e.to_string()))?;
+                )
+            };
+
+            if stderr_rx.read_to_end(&mut stderr_buf).is_err() {
+                // TODO: add warning message here
+                stderr_buf.extend_from_slice(b"Encountered an error capturing stderr");
             }
 
-            // Capture stdout
-            let mut output_buf = vec![];
-            stdout_rx.read_to_end(&mut output_buf)
-                .map_err(|e| ExecutorError::OutputCaptureFailed(e.to_string()))?;
+            run_result.map_err(|e| ExecutorError::ExecutionFailed(format!("{}\nstderr: {}", e, String::from_utf8_lossy(&stderr_buf))))?;
 
-            Ok(output_buf)
+            stdout_rx.read_to_end(&mut stdout_buf)
+                .map_err(|e| ExecutorError::OutputCaptureFailed(e.to_string()))?;
+            Ok((stdout_buf, stderr_buf))
         })
         .await
         .map_err(|e| ExecutorError::WorkerPanicked(e))
         ??;
 
         let response = JobResponse {
-            result: output_buf,
+            stdout: stdout_buf,
+            stderr: stderr_buf
         };
         return Ok(Response::new(response));
     }

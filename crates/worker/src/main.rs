@@ -17,6 +17,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = listener.local_addr()?;
 
     // Register this worker with the orchestrator
+    // TODO: accept orchestrator endpoint as cli arg
     let orchestrator_url = "http://127.0.0.1:50051";
     let worker = Worker::new(addr, orchestrator_url).await;
     
