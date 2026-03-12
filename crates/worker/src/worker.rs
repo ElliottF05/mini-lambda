@@ -32,69 +32,24 @@ pub struct Worker {
 impl Worker {
     /// Create a new Worker instance.
     pub async fn new(addr: SocketAddr, orchestrator_url: &str) -> Worker {
-        // 1. Set up Executor fields
+
+        // Set up Executor fields
         let tokio_task_manager = TokioTaskManager::new(tokio::runtime::Handle::current());
         let wasm_runtime = PluggableRuntime::new(Arc::new(tokio_task_manager));
 
 
-        // 2. Set up communication with Orchestrator
-        let mut client = WorkerApiClient::connect(orchestrator_url.to_string()).await
-            .unwrap_or_else(|e| panic!("Orchestrator should be reachable at {} before workers start: {}", orchestrator_url, e));
-
-        // Set up channel for streaming
-        let (tx, rx) = mpsc::channel(32);
-        let outbound = ReceiverStream::new(rx);
-
-        // Connect and get the response stream
-        let response = client.connect_worker(Request::new(outbound)).await
-            .unwrap_or_else(|e| panic!("Orchestrator should accept worker connections during startup, received error {}", e));
-        let mut inbound = response.into_inner();
+        // Set up communication with Orchestrator
+        let (tx, inbound) = Worker::connect_to_orchestrator(orchestrator_url).await;
 
         // Create the Worker instance
-        let worker = Worker {
+        let mut worker = Worker {
             addr,
             wasm_runtime,
             orchestrator_tx: tx
         };
 
-        // Spawn a task to handle incoming messages from the orchestrator
-        let worker_clone = worker.clone();
-        tokio::spawn(async move {
-            while let Some(result) = inbound.next().await {
-                if !worker_clone.handle_orchestrator_message(result).await {
-                    break;
-                }
-            }
-        });
-
-        // Send the initial registration message
-        worker.orchestrator_tx.send(WorkerMessage {
-            message: Some(worker_message::Message::Registration(WorkerRegistration { address: addr.to_string() }))
-        }).await.unwrap_or_else(|e| panic!("Channel to Orchestrator should be working for initial registration, got error {}", e));
-
+        // Begin the bidirectional communication session with the Orchestrator
+        worker.start_orchestrator_session(inbound).await;
         worker
-    }
-
-    pub async fn handle_orchestrator_message(&self, result: Result<OrchestratorMessage, Status>) -> bool {
-        match result {
-            Ok(orchestrator_msg) => {
-                match orchestrator_msg.message {
-                    Some(orchestrator_message::Message::RegistrationAck(ack)) => {
-                        println!("Received registration ack: {:?}", ack);
-                    },
-                    None => {
-                        println!("Received empty message from orchestrator");
-                    }
-                }
-            },
-            Err(e) => {
-                eprintln!("Error receiving message from orchestrator: {:?}", e);
-                // TODO: error here likely means broken pipe, necessitating reconnection,
-                // this is an issue that can be handled later?
-                return false;
-            }
-        }
-
-        return true;
     }
 }
