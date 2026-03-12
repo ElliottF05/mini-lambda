@@ -1,15 +1,11 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use shared::{OrchestratorMessage, WorkerRegistration, worker_api_client::WorkerApiClient, worker_message};
 use tokio::sync::mpsc;
-use tokio_stream::StreamExt;
-use tokio_stream::wrappers::ReceiverStream;
-use tonic::{Request, Status};
 use wasmer_wasix::PluggableRuntime;
 use wasmer_wasix::runtime::task_manager::tokio::TokioTaskManager;
 
-use shared::{WorkerMessage, orchestrator_message};
+use shared::{WorkerMessage};
 
 /// Worker struct representing the main Worker component.
 /// It implements the Executor service, see executor.rs for details.
