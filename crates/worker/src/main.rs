@@ -1,3 +1,8 @@
+mod worker;
+mod executor;
+mod errors;
+mod orchestrator_client;
+
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
@@ -5,11 +10,6 @@ use tonic::transport::Server;
 use shared::executor_server::ExecutorServer;
 
 use crate::worker::Worker;
-
-mod worker;
-mod executor;
-mod errors;
-mod orchestrator_client;
 
 /// Main entry point for the Worker server binary.
 #[tokio::main]

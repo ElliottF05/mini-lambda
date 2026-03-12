@@ -16,7 +16,7 @@ use crate::errors::ExecutorError;
 #[tonic::async_trait]
 impl Executor for Worker {
 
-    /// The function exposed by the Worker that the Client/CLI calls to execute
+    /// The function exposed by the Worker that the Client calls to execute
     /// the submitted WASM job.
     async fn execute_job(
         &self, 

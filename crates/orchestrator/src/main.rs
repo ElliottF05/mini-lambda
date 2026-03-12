@@ -11,8 +11,10 @@ use crate::orchestrator::Orchestrator;
 /// Main entry point for the Orchestrator server binary.
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // TODO: make this addr a CLI arg passed in
-    let addr = "127.0.0.1:50051".parse()?;
+    let cli_args: Vec<_> = std::env::args().skip(1).collect();
+    let addr_str = cli_args.get(0)
+        .expect("Usage: orchestrator <orchestrator-address> e.g. orchestrator 127.0.0.1:50051");
+    let addr = addr_str.parse()?;
     let orchestrator = Orchestrator::default();
     
     println!("Orchestrator listening on {}", addr);
