@@ -1,13 +1,13 @@
 use tonic::{Request, Status, Response};
 
-use shared::cli_api_server::CliApi;
+use shared::client_api_server::ClientApi;
 use shared::{WorkerRequest, WorkerResponse};
 
 use crate::orchestrator::Orchestrator;
 
 /// Implementation of the CliApi service for the Orchestrator.
 #[tonic::async_trait]
-impl CliApi for Orchestrator {
+impl ClientApi for Orchestrator {
 
     /// A function exposed by the Orchestrator for the client/CLI to call to request
     /// a worker be assigned to them to execute their job.

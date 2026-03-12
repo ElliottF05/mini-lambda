@@ -1,8 +1,8 @@
 [workspace]
 members = [
   "crates/shared",
-  "crates/cli",
-  "crates/cli/test-wasm",
+  "crates/client",
+  "crates/client/test-wasm",
   "crates/worker",
   "crates/orchestrator", 
 ]

@@ -1,11 +1,11 @@
 mod orchestrator;
-mod cli_api;
+mod client_api;
 mod worker_api;
 mod registry;
 
 use tonic::transport::Server;
 
-use shared::{cli_api_server::CliApiServer, worker_api_server::WorkerApiServer};
+use shared::{client_api_server::ClientApiServer, worker_api_server::WorkerApiServer};
 use crate::orchestrator::Orchestrator;
 
 /// Main entry point for the Orchestrator server binary.
@@ -17,7 +17,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("Orchestrator listening on {}", addr);
     Server::builder()
-        .add_service(CliApiServer::new(orchestrator.clone()))
+        .add_service(ClientApiServer::new(orchestrator.clone()))
         .add_service(WorkerApiServer::new(orchestrator.clone()))
         .serve(addr)
         .await?;

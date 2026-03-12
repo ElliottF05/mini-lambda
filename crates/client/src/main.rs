@@ -1,6 +1,6 @@
 use tonic::Request;
 
-use shared::cli_api_client::CliApiClient;
+use shared::client_api_client::ClientApiClient;
 use shared::executor_client::ExecutorClient;
 use shared::{JobRequest, WorkerRequest};
 
@@ -11,7 +11,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wasm_args = &cli_args[1..];
 
     let orchestrator_endpoint: &str = "http://127.0.0.1:50051";
-    let mut orchestrator_client = CliApiClient::connect(orchestrator_endpoint).await?;
+    let mut orchestrator_client = ClientApiClient::connect(orchestrator_endpoint).await?;
 
     let worker_request = WorkerRequest {};
 
