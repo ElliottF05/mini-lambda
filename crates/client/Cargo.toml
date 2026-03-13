@@ -7,3 +7,5 @@ edition = "2024"
 shared = { path = "../shared" }
 tonic = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+clap = { version = "4.6.0", features = ["derive"]}
+clap_derive = { version = "4.6.0" }
