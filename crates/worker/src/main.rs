@@ -13,27 +13,31 @@ use crate::worker::Worker;
 
 /// Main entry point for the Worker server binary.
 #[tokio::main]
-pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let listener = TcpListener::bind("127.0.0.1:0").await?;
-    let addr = listener.local_addr()?;
+pub async fn main() {
+    let cli_args: Vec<_> = std::env::args().skip(1).collect();
+    if cli_args.len() != 2 {
+        eprintln!("Usage: worker <orchestrator-url> <bind-host>\n  e.g. worker http://127.0.0.1:50051 127.0.0.1");
+        std::process::exit(1);
+    }
+    let orchestrator_endpoint = &cli_args[0];
+    let bind_host = &cli_args[1];
+
+    let listener = TcpListener::bind(format!("{}:0", bind_host)).await
+        .unwrap_or_else(|e| panic!("Failed to bind to host {}: {}", bind_host, e));
+    let addr = listener.local_addr()
+        .unwrap_or_else(|e| panic!("Failed to fetch port Worker is bound to: {}", e));
 
     // Register this worker with the orchestrator
-    // TODO: accept orchestrator endpoint as cli arg
-    let orchestrator_url = "http://127.0.0.1:50051";
-    let worker = Worker::new(addr, orchestrator_url).await;
+    let worker = Worker::new(addr, orchestrator_endpoint).await;
     
     // Start the executor server
     println!("Worker listening on {}", addr);
-    let _server_handle = tokio::spawn(async move {
-        let incoming = TcpListenerStream::new(listener);
-        Server::builder()
-            .add_service(ExecutorServer::new(worker))
-            .serve_with_incoming(incoming)
-            .await
-    });
-
-    // Keep the main task alive
-    tokio::signal::ctrl_c().await?;
-
-    Ok(())
+    let incoming = TcpListenerStream::new(listener);
+    Server::builder()
+        .add_service(ExecutorServer::new(worker))
+        .serve_with_incoming_shutdown(incoming, async {
+            tokio::signal::ctrl_c().await.ok();
+        })
+        .await
+        .unwrap_or_else(|e| panic!("Executor server failed: {}", e));
 }

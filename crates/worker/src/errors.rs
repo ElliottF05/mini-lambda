@@ -1,3 +1,4 @@
+/// Enum for all recoverable errors that can occur in the Executor.
 #[derive(Debug, thiserror::Error)]
 pub enum ExecutorError {
     #[error("wasm compilation failed: {0}")]

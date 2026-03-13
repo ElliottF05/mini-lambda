@@ -10,11 +10,14 @@ use crate::orchestrator::Orchestrator;
 
 /// Main entry point for the Orchestrator server binary.
 #[tokio::main]
-pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn main() {
     let cli_args: Vec<_> = std::env::args().skip(1).collect();
-    let addr_str = cli_args.get(0)
-        .expect("Usage: orchestrator <orchestrator-address> e.g. orchestrator 127.0.0.1:50051");
-    let addr = addr_str.parse()?;
+    if cli_args.len() != 1 {
+        eprintln!("Usage: orchestrator <orchestrator-address> e.g. orchestrator 127.0.0.1:50051");
+        std::process::exit(1);
+    }
+    let addr = cli_args[0].parse()
+        .unwrap_or_else(|e| panic!("Failed to parse the given addr {}: {}", cli_args[0], e));
     let orchestrator = Orchestrator::default();
     
     println!("Orchestrator listening on {}", addr);
@@ -22,7 +25,6 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(ClientApiServer::new(orchestrator.clone()))
         .add_service(WorkerApiServer::new(orchestrator.clone()))
         .serve(addr)
-        .await?;
-
-    Ok(())
+        .await
+        .unwrap_or_else(|e| panic!("Failed to serve the Orchestrator: {}", e));
 }
