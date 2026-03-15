@@ -8,3 +8,4 @@ shared = { path = "../shared" }
 tonic = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-stream = { workspace = true, features = []}
+priority-queue = { version = "2.7.0" }

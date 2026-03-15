@@ -70,7 +70,7 @@ impl Orchestrator {
     async fn handle_worker_registration(&self, tx: OutboundTx, registration: shared::WorkerRegistration) {
         println!("Handling worker registration: {:?}", registration);
 
-        self.registry.write().await.register_worker(registration.address);
+        self.registry.write().await.register_worker(registration.address, registration.credits);
 
         // Send registration ack back to worker
         let ack = OrchestratorMessage {

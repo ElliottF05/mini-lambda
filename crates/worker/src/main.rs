@@ -15,12 +15,14 @@ use crate::worker::Worker;
 #[tokio::main]
 pub async fn main() {
     let cli_args: Vec<_> = std::env::args().skip(1).collect();
-    if cli_args.len() != 2 {
-        eprintln!("Usage: worker <orchestrator-url> <bind-host>\n  e.g. worker http://127.0.0.1:50051 127.0.0.1");
+    if cli_args.len() != 3 {
+        eprintln!("Usage: worker <orchestrator-endpoint> <bind-host> <worker-credits>\n  e.g. worker http://127.0.0.1:50051 127.0.0.1 4");
         std::process::exit(1);
     }
     let orchestrator_endpoint = &cli_args[0];
     let bind_host = &cli_args[1];
+    let worker_credits: u32 = cli_args[2].parse()
+        .unwrap_or_else(|e| panic!("Failed to parse Worker credit count: {}", e));
 
     let listener = TcpListener::bind(format!("{}:0", bind_host)).await
         .unwrap_or_else(|e| panic!("Failed to bind to host {}: {}", bind_host, e));
@@ -28,7 +30,7 @@ pub async fn main() {
         .unwrap_or_else(|e| panic!("Failed to fetch port Worker is bound to: {}", e));
 
     // Register this worker with the orchestrator
-    let worker = Worker::new(addr, orchestrator_endpoint).await;
+    let worker = Worker::new(addr, orchestrator_endpoint, worker_credits).await;
     
     // Start the executor server
     println!("Worker listening on {}", addr);

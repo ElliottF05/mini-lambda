@@ -18,6 +18,7 @@ message WorkerMessage {
 // Initial registration message sent by the Worker.
 message WorkerRegistration {
     string address = 1;
+    uint32 credits = 2;
 }
 
 // Message sent by the Orchestrator to the Worker.

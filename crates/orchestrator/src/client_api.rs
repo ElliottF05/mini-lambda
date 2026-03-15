@@ -17,11 +17,8 @@ impl ClientApi for Orchestrator {
     ) -> Result<Response<WorkerResponse>, Status> {
 
         // TODO: process error here instead of unwrapping it
-        let worker = self.registry.read().await.get_worker().unwrap().clone();
-        let response = WorkerResponse {
-            worker_address: worker.address
-        };
-
+        let worker_address = self.registry.write().await.get_worker().unwrap().clone();
+        let response = WorkerResponse { worker_address };
         return Ok(Response::new(response));
     }
 }

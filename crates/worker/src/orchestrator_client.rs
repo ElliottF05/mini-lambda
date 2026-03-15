@@ -32,7 +32,7 @@ impl Worker {
 
     /// Start a bidirectional communication session with the Orchestrator. This consists of 
     /// spawing a task to process inbound messages, and sending the initial registration message.
-    pub async fn start_orchestrator_session(&mut self, mut inbound: Streaming<OrchestratorMessage>) {
+    pub async fn start_orchestrator_session(&mut self, mut inbound: Streaming<OrchestratorMessage>, worker_credits: u32) {
         // Spawn a task to handle incoming messages from the orchestrator
         let worker_clone = self.clone();
         tokio::spawn(async move {
@@ -45,7 +45,7 @@ impl Worker {
 
         // Send the initial registration message
         self.orchestrator_tx.send(WorkerMessage {
-            message: Some(worker_message::Message::Registration(WorkerRegistration { address: self.addr.to_string() }))
+            message: Some(worker_message::Message::Registration(WorkerRegistration { address: self.addr.to_string(), credits: worker_credits }))
         }).await.unwrap_or_else(|e| panic!("Channel to Orchestrator should be working for initial registration, got error {}", e));
     }
 

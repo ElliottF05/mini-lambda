@@ -27,7 +27,7 @@ pub struct Worker {
 
 impl Worker {
     /// Create a new Worker instance.
-    pub async fn new(addr: SocketAddr, orchestrator_url: &str) -> Worker {
+    pub async fn new(addr: SocketAddr, orchestrator_endpoint: &str, worker_credits: u32) -> Worker {
 
         // Set up Executor fields
         let tokio_task_manager = TokioTaskManager::new(tokio::runtime::Handle::current());
@@ -35,7 +35,7 @@ impl Worker {
 
 
         // Set up communication with Orchestrator
-        let (tx, inbound) = Worker::connect_to_orchestrator(orchestrator_url).await;
+        let (tx, inbound) = Worker::connect_to_orchestrator(orchestrator_endpoint).await;
 
         // Create the Worker instance
         let mut worker = Worker {
@@ -45,7 +45,7 @@ impl Worker {
         };
 
         // Begin the bidirectional communication session with the Orchestrator
-        worker.start_orchestrator_session(inbound).await;
+        worker.start_orchestrator_session(inbound, worker_credits).await;
         worker
     }
 }
