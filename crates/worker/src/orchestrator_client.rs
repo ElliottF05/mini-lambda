@@ -41,6 +41,8 @@ impl Worker {
             while let Some(result) = inbound.next().await {
                 worker_clone.handle_orchestrator_message(result).await;
             }
+            eprintln!("Orchestrator stream closed, shutting down");
+            std::process::exit(1);
         });
 
         // Send the initial registration message
@@ -58,14 +60,13 @@ impl Worker {
             if tx.send(WorkerMessage { 
                 message: Some(worker_message::Message::CreditUpdate(CreditUpdate { credits }))
             }).await.is_err() {
-                panic!("Lost connection to the Orchestrator, shutting down");
+                eprintln!("Lost connection to the Orchestrator, shutting down");
+                std::process::exit(1);
             }
         });
     }
 
     /// Handles all incoming messages from the Orchestrator.
-    /// Returns false if the connection to the Orchestrator was lost, 
-    /// true otherwise.
     pub async fn handle_orchestrator_message(&self, result: Result<OrchestratorMessage, Status>) {
         match result {
             Ok(orchestrator_msg) => {
@@ -79,7 +80,8 @@ impl Worker {
                 }
             },
             Err(e) => {
-                panic!("Connection with Orchestrator dropped, exiting: {:?}", e);
+                eprintln!("Connection with Orchestrator dropped, shutting down: {:?}", e);
+                std::process::exit(1);
             }
         }
     }
