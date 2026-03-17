@@ -3,7 +3,7 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Status, Response, Streaming};
 
-use shared::{CreditUpdate, OrchestratorMessage, RegistrationAck, WorkerMessage, orchestrator_message, worker_message};
+use shared::{OrchestratorMessage, RegistrationAck, WorkerMessage, orchestrator_message, worker_message};
 use shared::worker_api_server::WorkerApi;
 
 use crate::orchestrator::Orchestrator;
@@ -46,7 +46,7 @@ impl WorkerApi for Orchestrator {
                         // Handle different message types
                         match worker_msg.message {
                             Some(worker_message::Message::CreditUpdate(credit_update)) => {
-                                orchestrator.update_local_credits(&worker_address, credit_update.credits).await;
+                                orchestrator.registry.write().await.update_credits(&worker_address, credit_update.credits);
                             },
                             Some(worker_message::Message::Registration(_)) => {
                                 eprintln!("Worker {} sent a duplicate registration", worker_address);
@@ -64,6 +64,7 @@ impl WorkerApi for Orchestrator {
                 }
             }
             println!("Worker disconnected");
+            orchestrator.registry.write().await.deregister_worker(&worker_address);
         });
 
         Ok(Response::new(ReceiverStream::new(rx)))
@@ -93,10 +94,5 @@ impl Orchestrator {
         } else {
             println!("Worker registered, registration ack sent to worker");
         }
-    }
-
-    /// Updates the credit count for a worker in the registry.
-    async fn update_local_credits(&self, worker_address: &str, credits: u32) {
-        self.registry.write().await.update_credits(worker_address, credits);
     }
 }

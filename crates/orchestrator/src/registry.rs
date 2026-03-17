@@ -43,4 +43,10 @@ impl WorkerRegistry {
             eprintln!("Attempted to update credits for an unknown worker: {}", worker_address);
         }
     }
+
+    pub fn deregister_worker(&mut self, worker_address: &str) {
+        if self.inner.remove(worker_address).is_none() {
+            eprintln!("Attempted to remove an unknown worker: {}", worker_address);
+        }
+    }
 }
