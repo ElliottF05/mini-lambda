@@ -3,7 +3,7 @@ use priority_queue::PriorityQueue;
 /// Registry to manage the Workers registered to this Orchestrator.
 #[derive(Debug)]
 pub struct WorkerRegistry {
-    inner: PriorityQueue<u32, String>,
+    inner: PriorityQueue<String, u32>,
 }
 
 impl WorkerRegistry {
@@ -16,18 +16,31 @@ impl WorkerRegistry {
 
     /// Registers a new Worker with the given address.
     pub fn register_worker(&mut self, address: String, credits: u32) {
-        self.inner.push(credits, address);
+        self.inner.push(address, credits);
     }
 
     /// Retrieves the Worker address with the most available credits from the registry and 
     /// decrements its credit count by one. Returns None if there are no Workers with 
     /// any available credits.
     pub fn get_worker(&mut self) -> Option<String> {
-        if let Some((credits, address)) = self.inner.peek_mut() && *credits > 0 {
-            *credits -= 1;
-            Some(address.clone())
+        if let Some((address, credits)) = self.inner.peek() {
+            let (address, credits) = (address.clone(), *credits);
+            if credits > 0 {
+                self.inner.change_priority(&address, credits - 1);
+                Some(address)
+            } else {
+                None
+            }
         } else {
             None
+        }
+    }
+
+    /// Update the credit count for a given worker address in the registry.
+    /// Logs an error if the worker isn't in the registry.
+    pub fn update_credits(&mut self, worker_address: &str, credits: u32) {
+        if self.inner.change_priority(worker_address, credits).is_none() {
+            eprintln!("Attempted to update credits for an unknown worker: {}", worker_address);
         }
     }
 }

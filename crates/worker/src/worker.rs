@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::atomic::AtomicU32};
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
@@ -23,6 +23,9 @@ pub struct Worker {
 
     // Fields relating to communication with the Orchestrator
     pub orchestrator_tx: mpsc::Sender<WorkerMessage>,
+
+    // Fields relating to both
+    pub credits: Arc<AtomicU32>
 }
 
 impl Worker {
@@ -41,7 +44,8 @@ impl Worker {
         let mut worker = Worker {
             addr,
             wasm_runtime,
-            orchestrator_tx: tx
+            orchestrator_tx: tx,
+            credits: Arc::new(AtomicU32::new(worker_credits))
         };
 
         // Begin the bidirectional communication session with the Orchestrator

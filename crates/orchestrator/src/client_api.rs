@@ -16,7 +16,8 @@ impl ClientApi for Orchestrator {
         _request: Request<WorkerRequest>
     ) -> Result<Response<WorkerResponse>, Status> {
 
-        // TODO: process error here instead of unwrapping it
+        // TODO: implement a job queue in the orchestrator to 
+        // handle cases where there are no available workers
         let worker_address = self.registry.write().await.get_worker().unwrap().clone();
         let response = WorkerResponse { worker_address };
         return Ok(Response::new(response));

@@ -1,4 +1,6 @@
-use shared::{OrchestratorMessage, WorkerRegistration, orchestrator_message, worker_api_client::WorkerApiClient, worker_message};
+use std::sync::atomic::Ordering;
+
+use shared::{CreditUpdate, OrchestratorMessage, WorkerRegistration, orchestrator_message, worker_api_client::WorkerApiClient, worker_message};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
@@ -32,14 +34,12 @@ impl Worker {
 
     /// Start a bidirectional communication session with the Orchestrator. This consists of 
     /// spawing a task to process inbound messages, and sending the initial registration message.
-    pub async fn start_orchestrator_session(&mut self, mut inbound: Streaming<OrchestratorMessage>, worker_credits: u32) {
+    pub async fn start_orchestrator_session(&self, mut inbound: Streaming<OrchestratorMessage>, worker_credits: u32) {
         // Spawn a task to handle incoming messages from the orchestrator
         let worker_clone = self.clone();
         tokio::spawn(async move {
             while let Some(result) = inbound.next().await {
-                if !worker_clone.handle_orchestrator_message(result).await {
-                    break;
-                }
+                worker_clone.handle_orchestrator_message(result).await;
             }
         });
 
@@ -49,8 +49,24 @@ impl Worker {
         }).await.unwrap_or_else(|e| panic!("Channel to Orchestrator should be working for initial registration, got error {}", e));
     }
 
+    /// Sends a credit update to the Orchestrator with the current available credit count
+    /// for this worker. Spawns a background task to do this, does not block the caller.
+    pub fn send_credit_update(&self) {
+        let tx= self.orchestrator_tx.clone();
+        let credits = self.credits.load(Ordering::Relaxed);
+        tokio::spawn(async move {
+            if tx.send(WorkerMessage { 
+                message: Some(worker_message::Message::CreditUpdate(CreditUpdate { credits }))
+            }).await.is_err() {
+                panic!("Lost connection to the Orchestrator, shutting down");
+            }
+        });
+    }
+
     /// Handles all incoming messages from the Orchestrator.
-    pub async fn handle_orchestrator_message(&self, result: Result<OrchestratorMessage, Status>) -> bool {
+    /// Returns false if the connection to the Orchestrator was lost, 
+    /// true otherwise.
+    pub async fn handle_orchestrator_message(&self, result: Result<OrchestratorMessage, Status>) {
         match result {
             Ok(orchestrator_msg) => {
                 match orchestrator_msg.message {
@@ -63,13 +79,8 @@ impl Worker {
                 }
             },
             Err(e) => {
-                eprintln!("Error receiving message from orchestrator: {:?}", e);
-                // TODO: error here likely means broken pipe, necessitating reconnection,
-                // this is an issue that can be handled later?
-                return false;
+                panic!("Connection with Orchestrator dropped, exiting: {:?}", e);
             }
         }
-
-        return true;
     }
 }

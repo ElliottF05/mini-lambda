@@ -8,10 +8,13 @@ service WorkerApi {
     rpc ConnectWorker(stream WorkerMessage) returns (stream OrchestratorMessage);
 }
 
-// Message sent by the Worker to the Orchestrator.
+
+
+// Messages sent by the Worker to the Orchestrator.
 message WorkerMessage {
     oneof message {
         WorkerRegistration registration = 1;
+        CreditUpdate credit_update = 2;
     }
 }
 
@@ -21,7 +24,14 @@ message WorkerRegistration {
     uint32 credits = 2;
 }
 
-// Message sent by the Orchestrator to the Worker.
+// Sent by a Worker to report its current available credit count.
+message CreditUpdate {
+    uint32 credits = 1;
+}
+
+
+
+// Messages sent by the Orchestrator to the Worker.
 message OrchestratorMessage {
     oneof message {
         RegistrationAck registration_ack = 1;

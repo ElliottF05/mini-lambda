@@ -29,6 +29,12 @@ pub async fn main() {
     let addr = listener.local_addr()
         .unwrap_or_else(|e| panic!("Failed to fetch port Worker is bound to: {}", e));
 
+    // Set a panic hook to capture panics from spawned tasks
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("{}", info);
+        std::process::exit(1);
+    }));
+
     // Register this worker with the orchestrator
     let worker = Worker::new(addr, orchestrator_endpoint, worker_credits).await;
     

@@ -3,7 +3,7 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Status, Response, Streaming};
 
-use shared::{OrchestratorMessage, RegistrationAck, WorkerMessage, orchestrator_message, worker_message};
+use shared::{CreditUpdate, OrchestratorMessage, RegistrationAck, WorkerMessage, orchestrator_message, worker_message};
 use shared::worker_api_server::WorkerApi;
 
 use crate::orchestrator::Orchestrator;
@@ -27,22 +27,32 @@ impl WorkerApi for Orchestrator {
         // Spawn a task to handle the bidirectional communication
         let orchestrator = self.clone(); // Clone for move into async task
         tokio::spawn(async move {
+
+            // Expect a registration as the first message
+            let worker_address = match inbound.next().await {
+                Some(Ok(WorkerMessage { message: Some(worker_message::Message::Registration(registration)) })) => {
+                    orchestrator.handle_worker_registration(tx.clone(), &registration).await;
+                    registration.address
+                },
+                _ => {
+                    eprintln!("Worker connected without sending registration first");
+                    return;
+                }
+            };
+
             while let Some(result) = inbound.next().await {
                 match result {
                     Ok(worker_msg) => {
-                        // Clone for move into async task
-                        let orchestrator = orchestrator.clone();
-                        let tx = tx.clone();
-
                         // Handle different message types
                         match worker_msg.message {
-                            Some(worker_message::Message::Registration(registration)) => {
-                                tokio::spawn(async move {
-                                    orchestrator.handle_worker_registration(tx, registration).await;
-                                });
+                            Some(worker_message::Message::CreditUpdate(credit_update)) => {
+                                orchestrator.update_local_credits(&worker_address, credit_update.credits).await;
+                            },
+                            Some(worker_message::Message::Registration(_)) => {
+                                eprintln!("Worker {} sent a duplicate registration", worker_address);
                             },
                             None => {
-                                println!("Received empty message from worker");
+                                eprintln!("Received empty message from worker");
                             }
                         }
 
@@ -62,15 +72,15 @@ impl WorkerApi for Orchestrator {
 
 
 // Helper methods for the WorkerApi implementation.
-// They all use the outbound tx channel to send messages back to the worker.
+// They may use the outbound tx channel to send messages back to the worker.
 type OutboundTx = mpsc::Sender<Result<OrchestratorMessage, Status>>;
 impl Orchestrator {
 
     /// Handles an incoming Worker registration message.
-    async fn handle_worker_registration(&self, tx: OutboundTx, registration: shared::WorkerRegistration) {
+    async fn handle_worker_registration(&self, tx: OutboundTx, registration: &shared::WorkerRegistration) {
         println!("Handling worker registration: {:?}", registration);
 
-        self.registry.write().await.register_worker(registration.address, registration.credits);
+        self.registry.write().await.register_worker(registration.address.clone(), registration.credits);
 
         // Send registration ack back to worker
         let ack = OrchestratorMessage {
@@ -83,5 +93,10 @@ impl Orchestrator {
         } else {
             println!("Worker registered, registration ack sent to worker");
         }
+    }
+
+    /// Updates the credit count for a worker in the registry.
+    async fn update_local_credits(&self, worker_address: &str, credits: u32) {
+        self.registry.write().await.update_credits(worker_address, credits);
     }
 }
