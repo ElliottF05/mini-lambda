@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
-use hashlink::LinkedHashSet;
-use shared::WorkerRequest;
 use tokio::sync::RwLock;
 
-use crate::registry::WorkerRegistry;
+use crate::{job_queue::JobQueue, registry::WorkerRegistry};
 
 /// Orchestrator struct representing the main Orchestrator server component.
 /// It implements CliApi and WorkerApi services, see cli_api.rs and worker_api.rs for details.
@@ -13,7 +11,7 @@ use crate::registry::WorkerRegistry;
 pub struct Orchestrator {
     // note: all shared state fields should use Arc<RwLock<...>> for thread safety
     pub registry: Arc<RwLock<WorkerRegistry>>,
-    pub job_queue: Arc<LinkedHashSet<WorkerRequest>>,
+    pub job_queue: Arc<RwLock<JobQueue>>,
 }
 
 impl Default for Orchestrator {
@@ -21,7 +19,7 @@ impl Default for Orchestrator {
     fn default() -> Self {
         Self {
             registry: Arc::new(RwLock::new(WorkerRegistry::new())),
-            job_queue: Arc::new(LinkedHashSet::new())
+            job_queue: Arc::new(RwLock::new(JobQueue::new()))
         }
     }
 }

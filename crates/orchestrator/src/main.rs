@@ -2,6 +2,7 @@ mod orchestrator;
 mod client_api;
 mod worker_api;
 mod registry;
+mod job_queue;
 
 use clap::Parser;
 use tonic::transport::Server;

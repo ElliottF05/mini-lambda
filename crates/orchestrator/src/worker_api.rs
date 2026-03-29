@@ -3,7 +3,7 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Status, Response, Streaming};
 
-use shared::{OrchestratorMessage, RegistrationAck, WorkerMessage, orchestrator_message, worker_message};
+use shared::{CreditUpdate, OrchestratorMessage, RegistrationAck, WorkerMessage, WorkerResponse, orchestrator_message, worker_message};
 use shared::worker_api_server::WorkerApi;
 
 use crate::orchestrator::Orchestrator;
@@ -46,7 +46,7 @@ impl WorkerApi for Orchestrator {
                         // Handle different message types
                         match worker_msg.message {
                             Some(worker_message::Message::CreditUpdate(credit_update)) => {
-                                orchestrator.registry.write().await.update_credits(&worker_address, credit_update.credits);
+                                orchestrator.handle_credit_update(&worker_address, credit_update).await;
                             },
                             Some(worker_message::Message::Registration(_)) => {
                                 eprintln!("Worker {} sent a duplicate registration", worker_address);
@@ -76,12 +76,11 @@ impl WorkerApi for Orchestrator {
 // They may use the outbound tx channel to send messages back to the worker.
 type OutboundTx = mpsc::Sender<Result<OrchestratorMessage, Status>>;
 impl Orchestrator {
-
     /// Handles an incoming Worker registration message.
     async fn handle_worker_registration(&self, tx: OutboundTx, registration: &shared::WorkerRegistration) {
         println!("Handling worker registration: {:?}", registration);
 
-        self.registry.write().await.register_worker(registration.address.clone(), registration.credits);
+        self.registry.write().await.register_worker(registration.address.clone(), 0);
 
         // Send registration ack back to worker
         let ack = OrchestratorMessage {
@@ -94,5 +93,25 @@ impl Orchestrator {
         } else {
             println!("Worker registered, registration ack sent to worker");
         }
+    }
+
+    async fn handle_credit_update(&self, worker_address: &str, credit_update: CreditUpdate) {
+        let mut queue = self.job_queue.write().await;
+        let mut registry = self.registry.write().await;
+
+        let mut remaining_credits = credit_update.credits;
+        while remaining_credits > 0 {
+            match queue.dequeue() {
+                Some(job) => {
+                    let worker_response = WorkerResponse { worker_address: worker_address.to_string() };
+                    if job.tx.send(worker_response).is_ok() {
+                        remaining_credits -= 1;
+                    }
+                },
+                None => break
+            }
+        }
+
+        registry.update_credits(worker_address, remaining_credits);
     }
 }

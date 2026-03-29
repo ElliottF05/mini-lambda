@@ -41,7 +41,7 @@ impl Worker {
         let (tx, inbound) = Worker::connect_to_orchestrator(orchestrator_endpoint).await;
 
         // Create the Worker instance
-        let mut worker = Worker {
+        let worker = Worker {
             addr,
             wasm_runtime,
             orchestrator_tx: tx,
@@ -49,7 +49,7 @@ impl Worker {
         };
 
         // Begin the bidirectional communication session with the Orchestrator
-        worker.start_orchestrator_session(inbound, worker_credits).await;
+        worker.start_orchestrator_session(inbound).await;
         worker
     }
 }

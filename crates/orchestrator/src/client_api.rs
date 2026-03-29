@@ -1,8 +1,11 @@
+use tokio::sync::oneshot;
 use tonic::{Request, Status, Response};
 
 use shared::client_api_server::ClientApi;
 use shared::{WorkerRequest, WorkerResponse};
+use uuid::Uuid;
 
+use crate::job_queue::PendingJob;
 use crate::orchestrator::Orchestrator;
 
 /// Implementation of the CliApi service for the Orchestrator.
@@ -16,10 +19,28 @@ impl ClientApi for Orchestrator {
         _request: Request<WorkerRequest>
     ) -> Result<Response<WorkerResponse>, Status> {
 
-        // TODO: implement a job queue in the orchestrator to 
-        // handle cases where there are no available workers
-        let worker_address = self.registry.write().await.get_worker().unwrap().clone();
-        let response = WorkerResponse { worker_address };
-        return Ok(Response::new(response));
+        let worker_address = self.registry.write().await.get_worker();
+        match worker_address {
+            Some(worker_address) => {
+                let response = WorkerResponse { worker_address: worker_address.clone() };
+                println!("Assigning worker at {} to the client", worker_address);
+                return Ok(Response::new(response));
+            },
+            None => {
+                let (tx, rx) = oneshot::channel();
+                let job_id = Uuid::new_v4();
+                let job = PendingJob { id: job_id.clone(), tx };
+                println!("No workers currently available, enqueing job with id {}", job.id);
+                self.job_queue.write().await.enqueue(job);
+
+                match rx.await {
+                    Ok(response) => {
+                        println!("Worker at {} became available, dequeueing job with id {}", response.worker_address, job_id);
+                        Ok(Response::new(response))
+                    },
+                    Err(_) => Err(Status::cancelled("job cancelled before worker assigned"))
+                }
+            }
+        }
     }
 }
