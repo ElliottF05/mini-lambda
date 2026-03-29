@@ -3,6 +3,7 @@ mod executor;
 mod errors;
 mod orchestrator_client;
 
+use clap::Parser;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
@@ -11,18 +12,22 @@ use shared::executor_server::ExecutorServer;
 
 use crate::worker::Worker;
 
+#[derive(Parser, Debug)]
+#[command(about = "Run a Worker server")]
+struct Args {
+    bind_host: String,
+    worker_credits: u32,
+    #[arg(long, default_value = "http://127.0.0.1:50051")]
+    orchestrator: String,
+}
+
 /// Main entry point for the Worker server binary.
 #[tokio::main]
 pub async fn main() {
-    let cli_args: Vec<_> = std::env::args().skip(1).collect();
-    if cli_args.len() != 3 {
-        eprintln!("Usage: worker <orchestrator-endpoint> <bind-host> <worker-credits>\n  e.g. worker http://127.0.0.1:50051 127.0.0.1 4");
-        std::process::exit(1);
-    }
-    let orchestrator_endpoint = &cli_args[0];
-    let bind_host = &cli_args[1];
-    let worker_credits: u32 = cli_args[2].parse()
-        .unwrap_or_else(|e| panic!("Failed to parse Worker credit count: {}", e));
+    let args = Args::parse();
+    let orchestrator_endpoint = &args.orchestrator;
+    let bind_host = &args.bind_host;
+    let worker_credits = args.worker_credits;
 
     let listener = TcpListener::bind(format!("{}:0", bind_host)).await
         .unwrap_or_else(|e| panic!("Failed to bind to host {}: {}", bind_host, e));

@@ -5,7 +5,6 @@ use shared::client_api_client::ClientApiClient;
 use shared::executor_client::ExecutorClient;
 use shared::{JobRequest, WorkerRequest};
 
-/// Cli args for using clap
 #[derive(Parser, Debug)]
 #[command(about = "Submit a wasm job to the distributed compute platform")]
 struct Args {
