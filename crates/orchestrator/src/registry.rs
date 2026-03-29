@@ -49,4 +49,9 @@ impl WorkerRegistry {
             eprintln!("Attempted to remove an unknown worker: {}", worker_address);
         }
     }
+
+    /// Returns true if any registered Worker has at least one available credit.
+    pub fn has_available_credits(&self) -> bool {
+        self.inner.peek().map(|(_, &credits)| credits > 0).unwrap_or(false)
+    }
 }

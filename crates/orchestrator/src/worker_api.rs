@@ -6,7 +6,9 @@ use tonic::{Request, Status, Response, Streaming};
 use shared::{CreditUpdate, OrchestratorMessage, RegistrationAck, WorkerMessage, WorkerResponse, orchestrator_message, worker_message};
 use shared::worker_api_server::WorkerApi;
 
+use crate::job_queue::JobQueue;
 use crate::orchestrator::Orchestrator;
+use crate::registry::WorkerRegistry;
 
 /// Implementation of the WorkerApi service for Orchestrator.
 #[tonic::async_trait]
@@ -95,23 +97,29 @@ impl Orchestrator {
         }
     }
 
+    /// Handles a credit update from a Worker, updating its available credits in the registry
+    /// and dispatching any pending jobs that can now be served.
     async fn handle_credit_update(&self, worker_address: &str, credit_update: CreditUpdate) {
         let mut queue = self.job_queue.write().await;
         let mut registry = self.registry.write().await;
 
-        let mut remaining_credits = credit_update.credits;
-        while remaining_credits > 0 {
+        registry.update_credits(worker_address, credit_update.credits);
+        Self::dispatch_pending_jobs(&mut queue, &mut registry);
+    }
+
+    /// Dispatches as many pending jobs as possible to available workers, consuming one registry
+    /// credit per job. Stops when the queue is empty or no credits remain.
+    /// The caller must hold write guards on both the queue and registry for the duration.
+    pub fn dispatch_pending_jobs(queue: &mut JobQueue, registry: &mut WorkerRegistry) {
+        while registry.has_available_credits() {
             match queue.dequeue() {
                 Some(job) => {
-                    let worker_response = WorkerResponse { worker_address: worker_address.to_string() };
-                    if job.tx.send(worker_response).is_ok() {
-                        remaining_credits -= 1;
-                    }
+                    let worker_address = registry.get_worker()
+                        .expect("registry credit availability checked by has_available_credits()");
+                    job.tx.send(WorkerResponse { worker_address }).ok();
                 },
                 None => break
             }
         }
-
-        registry.update_credits(worker_address, remaining_credits);
     }
 }
