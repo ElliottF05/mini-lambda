@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use hashlink::LinkedHashSet;
+use shared::WorkerRequest;
 use tokio::sync::RwLock;
 
 use crate::registry::WorkerRegistry;
@@ -10,7 +12,8 @@ use crate::registry::WorkerRegistry;
 #[derive(Debug, Clone)]
 pub struct Orchestrator {
     // note: all shared state fields should use Arc<RwLock<...>> for thread safety
-    pub(crate) registry: Arc<RwLock<WorkerRegistry>>,
+    pub registry: Arc<RwLock<WorkerRegistry>>,
+    pub job_queue: Arc<LinkedHashSet<WorkerRequest>>,
 }
 
 impl Default for Orchestrator {
@@ -18,6 +21,7 @@ impl Default for Orchestrator {
     fn default() -> Self {
         Self {
             registry: Arc::new(RwLock::new(WorkerRegistry::new())),
+            job_queue: Arc::new(LinkedHashSet::new())
         }
     }
 }
