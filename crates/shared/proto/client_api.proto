@@ -8,8 +8,10 @@ service ClientApi {
     rpc RequestWorker (WorkerRequest) returns (WorkerResponse);
 }
 
-// The request message (empty for now)
-message WorkerRequest {}
+// The request message (includes the client-generated job_id)
+message WorkerRequest {
+    bytes job_id = 1;
+}
 
 // The response message containing the worker details.
 message WorkerResponse {

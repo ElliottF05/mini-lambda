@@ -38,6 +38,4 @@ message OrchestratorMessage {
 }
 
 // Registration acknowledgment message sent by the Orchestrator.
-message RegistrationAck {
-    
-}
+message RegistrationAck {}

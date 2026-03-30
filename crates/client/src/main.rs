@@ -4,6 +4,7 @@ use clap::Parser;
 use shared::client_api_client::ClientApiClient;
 use shared::executor_client::ExecutorClient;
 use shared::{JobRequest, WorkerRequest};
+use uuid::Uuid;
 
 #[derive(Parser, Debug)]
 #[command(about = "Submit a wasm job to the distributed compute platform")]
@@ -23,7 +24,7 @@ pub async fn main() {
     let mut orchestrator_client = ClientApiClient::connect(orchestrator_endpoint).await
         .unwrap_or_else(|e| panic!("Failed to connect to the Orchestrator: {}", e));
 
-    let worker_request = WorkerRequest {};
+    let worker_request = WorkerRequest { job_id: Uuid::new_v4().as_bytes().to_vec() };
 
     let response = orchestrator_client.request_worker(Request::new(worker_request)).await
         .unwrap_or_else(|e| panic!("Failed to request a worker from the Orchestrator: {}", e));

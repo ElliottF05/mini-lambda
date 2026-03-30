@@ -488,6 +488,7 @@ dependencies = [
  "shared",
  "tokio",
  "tonic",
+ "uuid",
 ]
 
 [[package]]
