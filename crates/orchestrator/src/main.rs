@@ -3,6 +3,7 @@ mod client_api;
 mod worker_api;
 mod registry;
 mod job_queue;
+mod errors;
 
 use clap::Parser;
 use tonic::transport::Server;

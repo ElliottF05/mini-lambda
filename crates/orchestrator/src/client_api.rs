@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::job_queue::PendingJob;
 use crate::orchestrator::Orchestrator;
+use crate::errors::ClientError;
 
 /// Implementation of the CliApi service for the Orchestrator.
 #[tonic::async_trait]
@@ -21,7 +22,7 @@ impl ClientApi for Orchestrator {
 
         // Create the pending job
         let job_id = Uuid::from_slice(&request.into_inner().job_id)
-            .map_err(|e| Status::invalid_argument(format!("invalid job_id: {}", e)))?;
+            .map_err(ClientError::InvalidJobId)?;
         let (tx, rx) = oneshot::channel();
         let job = PendingJob { id: job_id, tx };
 
@@ -40,7 +41,7 @@ impl ClientApi for Orchestrator {
                 println!("Worker at {} became available, dequeueing job with id {}", response.worker_address, job_id);
                 Ok(Response::new(response))
             },
-            Err(_) => Err(Status::cancelled("job cancelled before worker assigned"))
+            Err(_) => Err(ClientError::JobCancelled.into())
         }
     }
 }

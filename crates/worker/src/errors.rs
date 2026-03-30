@@ -15,12 +15,12 @@ pub enum ExecutorError {
 }
 
 impl From<ExecutorError> for tonic::Status {
-    fn from(value: ExecutorError) -> Self {
-        match value {
-            ExecutorError::CompilationFailed(e) => tonic::Status::invalid_argument(e.to_string()),
-            ExecutorError::ExecutionFailed(e) => tonic::Status::invalid_argument(e.to_string()),
-            ExecutorError::OutputCaptureFailed(e) => tonic::Status::internal(e.to_string()),
-            ExecutorError::WorkerPanicked(e) => tonic::Status::internal(e.to_string()),
+    fn from(e: ExecutorError) -> Self {
+        match e {
+            ExecutorError::CompilationFailed(_) => tonic::Status::invalid_argument(e.to_string()),
+            ExecutorError::ExecutionFailed(_) => tonic::Status::invalid_argument(e.to_string()),
+            ExecutorError::OutputCaptureFailed(_) => tonic::Status::internal(e.to_string()),
+            ExecutorError::WorkerPanicked(_) => tonic::Status::internal(e.to_string()),
         }
     }
 }
