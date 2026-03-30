@@ -2,10 +2,9 @@ use tokio::sync::oneshot;
 use tonic::{Request, Status, Response};
 
 use shared::client_api_server::ClientApi;
-use shared::{WorkerRequest, WorkerResponse};
+use shared::{CancelJobRequest, CancelJobResponse, WorkerRequest, WorkerResponse};
 use uuid::Uuid;
 
-use crate::job_queue::PendingJob;
 use crate::orchestrator::Orchestrator;
 use crate::errors::ClientError;
 
@@ -24,14 +23,13 @@ impl ClientApi for Orchestrator {
         let job_id = Uuid::from_slice(&request.into_inner().job_id)
             .map_err(ClientError::InvalidJobId)?;
         let (tx, rx) = oneshot::channel();
-        let job = PendingJob { id: job_id, tx };
 
         // Add this job to the queue and dispatch pending jobs atomically
         {
             let mut queue = self.job_queue.write().await;
             let mut registry = self.registry.write().await;
 
-            queue.enqueue(job);
+            queue.enqueue(job_id, tx);
             Self::dispatch_pending_jobs(&mut queue, &mut registry);
         }
 
@@ -43,5 +41,22 @@ impl ClientApi for Orchestrator {
             },
             Err(_) => Err(ClientError::JobCancelled.into())
         }
+    }
+
+    /// A function exposed by the Orchestrator for the Client to call
+    /// to cancel a job waiting in the Orchestrator queue. 
+    /// If this job is in the Orchestrator queue, it will remove it.
+    /// Returns an error on invalid job id.
+    async fn cancel_job(
+        &self,
+        request: Request<CancelJobRequest>
+    ) -> Result<Response<CancelJobResponse>, Status> {
+
+        let job_id = Uuid::from_slice(&request.into_inner().job_id)
+            .map_err(ClientError::InvalidJobId)?;
+
+        self.job_queue.write().await.cancel(&job_id);
+
+        Ok(Response::new(CancelJobResponse {}))
     }
 }

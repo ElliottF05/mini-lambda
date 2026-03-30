@@ -11,7 +11,10 @@ pub enum ExecutorError {
     OutputCaptureFailed(String),
 
     #[error("executor task panicked: {0}")]
-    WorkerPanicked(#[from] tokio::task::JoinError)
+    WorkerPanicked(#[from] tokio::task::JoinError),
+
+    #[error("invalid job id: {0}")]
+    InvalidJobId(#[from] uuid::Error),
 }
 
 impl From<ExecutorError> for tonic::Status {
@@ -21,6 +24,7 @@ impl From<ExecutorError> for tonic::Status {
             ExecutorError::ExecutionFailed(_) => tonic::Status::invalid_argument(e.to_string()),
             ExecutorError::OutputCaptureFailed(_) => tonic::Status::internal(e.to_string()),
             ExecutorError::WorkerPanicked(_) => tonic::Status::internal(e.to_string()),
+            ExecutorError::InvalidJobId(_) => tonic::Status::invalid_argument(e.to_string()),
         }
     }
 }

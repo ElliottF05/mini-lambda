@@ -5025,6 +5025,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
+ "uuid",
  "wasmer",
  "wasmer-compiler-cranelift",
  "wasmer-types",

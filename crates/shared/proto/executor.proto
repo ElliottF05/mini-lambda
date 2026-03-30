@@ -2,10 +2,15 @@ syntax = "proto3";
 
 package executor;
 
+import "shared.proto";
+
 // The job execution API exposed by the Worker (Executor) to the Client.
 service Executor {
     // Executes a job with the given payload.
     rpc ExecuteJob(JobRequest) returns (JobResponse);
+
+    // Cancels a pending or active job by its client-generated ID.
+    rpc CancelJob(shared.CancelJobRequest) returns (shared.CancelJobResponse);
 }
 
 // The request message containing the job payload.

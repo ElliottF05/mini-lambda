@@ -15,3 +15,4 @@ wasmer-wasix = { version = "0.700.1" }
 wasmer-types = { version = "7.0.1" }
 thiserror = { workspace = true }
 clap = { workspace = true }
+uuid = { workspace = true }

@@ -2,18 +2,23 @@ syntax = "proto3";
 
 package client_api;
 
+import "shared.proto";
+
 // The API exposed by the Orchestrator to the CLI.
 service ClientApi {
-    // Requests a worker to handle a task.
-    rpc RequestWorker (WorkerRequest) returns (WorkerResponse);
+    // Requests a worker assignment for a job. Blocks until a worker is available.
+    rpc RequestWorker(WorkerRequest) returns (WorkerResponse);
+    
+    // Cancels a pending or active job by its client-generated ID.
+    rpc CancelJob(shared.CancelJobRequest) returns (shared.CancelJobResponse);
 }
 
-// The request message (includes the client-generated job_id)
+// A request for a worker assignment.
 message WorkerRequest {
     bytes job_id = 1;
 }
 
-// The response message containing the worker details.
+// Contains the address of the worker assigned to the job.
 message WorkerResponse {
     string worker_address = 1;
     // string security_token = 2;

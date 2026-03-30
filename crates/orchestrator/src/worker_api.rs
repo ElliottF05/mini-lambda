@@ -113,10 +113,10 @@ impl Orchestrator {
     pub fn dispatch_pending_jobs(queue: &mut JobQueue, registry: &mut WorkerRegistry) {
         while registry.has_available_credits() {
             match queue.dequeue() {
-                Some(job) => {
+                Some((_job_id, tx)) => {
                     let worker_address = registry.get_worker()
                         .expect("registry credit availability checked by has_available_credits()");
-                    job.tx.send(WorkerResponse { worker_address }).ok();
+                    tx.send(WorkerResponse { worker_address }).ok();
                 },
                 None => break
             }

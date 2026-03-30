@@ -3,12 +3,13 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use tonic::{Request, Status, Response};
+use uuid::Uuid;
 use wasmer::Module;
 use wasmer_wasix::runners::wasi::{RuntimeOrEngine, WasiRunner};
-use wasmer_wasix::Pipe;
+use wasmer_wasix::{Pipe, WasiProcess};
 
 use shared::executor_server::Executor;
-use shared::{JobRequest, JobResponse};
+use shared::{CancelJobRequest, CancelJobResponse, JobRequest, JobResponse};
 
 use crate::worker::Worker;
 use crate::errors::ExecutorError;
@@ -90,5 +91,18 @@ impl Executor for Worker {
         };
 
         Ok(Response::new(response))
+    }
+
+    /// A function exposed by the Worker for the Client to call
+    /// to cancel a job that is currently being run by this Worker. 
+    /// Returns an error on invalid job id.
+    async fn cancel_job(
+        &self,
+        request: Request<CancelJobRequest>
+    ) -> Result<Response<CancelJobResponse>, Status> {
+        let job_id = Uuid::from_slice(&request.into_inner().job_id)
+            .map_err(ExecutorError::InvalidJobId)?;
+
+        return Ok(Response::new(CancelJobResponse {}))
     }
 }

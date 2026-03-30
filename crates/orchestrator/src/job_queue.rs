@@ -1,54 +1,36 @@
-use std::hash::{Hash, Hasher};
-
-use hashlink::LinkedHashSet;
+use hashlink::LinkedHashMap;
 use shared::WorkerResponse;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
-/// A job awaiting dispatch to a Worker.
-#[derive(Debug)]
-pub struct PendingJob {
-    pub id: Uuid,
-    pub tx: oneshot::Sender<WorkerResponse>
-}
-
-impl Hash for PendingJob {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-    }
-}
-impl PartialEq for PendingJob {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-impl Eq for PendingJob {}
-
-
 /// FIFO queue of pending jobs, skipping any whose requester has disconnected.
 #[derive(Debug)]
 pub struct JobQueue {
-    inner: LinkedHashSet<PendingJob>
+    inner: LinkedHashMap<Uuid, oneshot::Sender<WorkerResponse>>
 }
 
 impl JobQueue {
     /// Create a new, empty JobQueue.
     pub fn new() -> JobQueue {
-        JobQueue { inner: LinkedHashSet::new() }
+        JobQueue { inner: LinkedHashMap::new() }
     }
 
     /// Add a job to the back of the queue.
-    pub fn enqueue(&mut self, job: PendingJob) {
-        self.inner.insert(job);
+    pub fn enqueue(&mut self, job_id: Uuid, tx: oneshot::Sender<WorkerResponse>) {
+        self.inner.insert(job_id, tx);
     }
 
     /// Remove and return the next job whose sender is still open, discarding any that have been cancelled.
-    pub fn dequeue(&mut self) -> Option<PendingJob> {
-        while let Some(job) = self.inner.pop_front() {
-            if !job.tx.is_closed() {
-                return Some(job)
+    pub fn dequeue(&mut self) -> Option<(Uuid, oneshot::Sender<WorkerResponse>)> {
+        while let Some((job_id, tx)) = self.inner.pop_front() {
+            if !tx.is_closed() {
+                return Some((job_id, tx))
             }
         }
         None
+    }
+
+    pub fn cancel(&mut self, job_id: &Uuid) -> bool {
+        self.inner.remove(job_id).is_some()
     }
 }
