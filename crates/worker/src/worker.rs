@@ -2,8 +2,6 @@ use std::{net::SocketAddr, sync::atomic::AtomicU32};
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
-use wasmer_wasix::PluggableRuntime;
-use wasmer_wasix::runtime::task_manager::tokio::TokioTaskManager;
 
 use shared::{WorkerMessage};
 
@@ -17,7 +15,7 @@ pub struct Worker {
 
     // Fields relating to the Executor service.
     pub addr: SocketAddr,
-    pub wasm_runtime: PluggableRuntime,
+    // pub wasm_runtime: PluggableRuntime,
     // TODO, look into wasmer's built-in caching: 
     // https://docs.rs/crate/wasmer-wasix/latest/source/src/runtime/module_cache/mod.rs
 
@@ -33,8 +31,8 @@ impl Worker {
     pub async fn new(addr: SocketAddr, orchestrator_endpoint: &str, worker_credits: u32) -> Worker {
 
         // Set up Executor fields
-        let tokio_task_manager = TokioTaskManager::new(tokio::runtime::Handle::current());
-        let wasm_runtime = PluggableRuntime::new(Arc::new(tokio_task_manager));
+        // let tokio_task_manager = TokioTaskManager::new(tokio::runtime::Handle::current());
+        // let wasm_runtime = PluggableRuntime::new(Arc::new(tokio_task_manager));
 
 
         // Set up communication with Orchestrator
@@ -43,7 +41,7 @@ impl Worker {
         // Create the Worker instance
         let worker = Worker {
             addr,
-            wasm_runtime,
+            // wasm_runtime,
             orchestrator_tx: tx,
             credits: Arc::new(AtomicU32::new(worker_credits))
         };
