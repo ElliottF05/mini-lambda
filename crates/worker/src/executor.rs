@@ -1,4 +1,4 @@
-use std::{u64, usize};
+use std::usize;
 
 use tokio_util::sync::CancellationToken;
 use tonic::{Request, Status, Response};
@@ -17,12 +17,13 @@ use crate::credit_guard::JobGuard;
 use crate::worker::Worker;
 use crate::errors::ExecutorError;
 
-// TODO: document these cause i'm really unsure why they are needed
+// Required by wasmtime
 pub struct ComponentRunStates {
     pub wasi_ctx: WasiCtx,
     pub resource_table: ResourceTable,
 }
 
+/// Exposes the WASI context and resource table to wasmtime-wasi's host function implementations.
 impl WasiView for ComponentRunStates {
     fn ctx(&mut self) -> WasiCtxView<'_> {
         WasiCtxView {
@@ -33,6 +34,8 @@ impl WasiView for ComponentRunStates {
 }
 
 impl ComponentRunStates {
+    /// An easy way to create a ComponentRunStates with a default ResourceTable and the
+    /// given WasiCtx
     pub fn new(wasi_ctx: WasiCtx) -> Self {
         Self { wasi_ctx, resource_table: ResourceTable::new() }
     }
