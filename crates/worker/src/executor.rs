@@ -54,7 +54,7 @@ impl Executor for Worker {
 
         let request = request.into_inner();
         let wasm_bytes = request.wasm_bytes;
-        let mut wasi_args = vec!["unnamed".to_string()]; // TODO: use job id instead of unnamed
+        let mut wasi_args = vec![String::from_utf8_lossy(&request.job_id).to_string()];
         wasi_args.extend(request.args);
         
         // TODO: cache component once compiled

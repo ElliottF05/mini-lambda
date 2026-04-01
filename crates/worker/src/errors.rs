@@ -10,9 +10,6 @@ pub enum ExecutorError {
     #[error("wasm execution failed: {0}")]
     ExecutionFailed(String),
 
-    #[error("executor task panicked: {0}")]
-    WorkerPanicked(#[from] tokio::task::JoinError),
-
     #[error("invalid job id: {0}")]
     InvalidJobId(#[from] uuid::Error),
 
@@ -26,7 +23,6 @@ impl From<ExecutorError> for tonic::Status {
             ExecutorError::CompilationFailed(_) => tonic::Status::invalid_argument(e.to_string()),
             ExecutorError::InstantiationFailed(_) => tonic::Status::invalid_argument(e.to_string()),
             ExecutorError::ExecutionFailed(_) => tonic::Status::invalid_argument(e.to_string()),
-            ExecutorError::WorkerPanicked(_) => tonic::Status::internal(e.to_string()),
             ExecutorError::InvalidJobId(_) => tonic::Status::invalid_argument(e.to_string()),
             ExecutorError::Unknown(_) => tonic::Status::unknown(e.to_string()),
         }
