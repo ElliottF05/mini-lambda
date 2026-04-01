@@ -1,5 +1,6 @@
 use std::{u64, usize};
 
+use tokio_util::sync::CancellationToken;
 use tonic::{Request, Status, Response};
 use uuid::Uuid;
 
@@ -12,7 +13,7 @@ use wasmtime_wasi::p2::bindings::Command;
 use wasmtime_wasi::p2::pipe::MemoryOutputPipe;
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
-use crate::credit_guard::CreditGuard;
+use crate::credit_guard::JobGuard;
 use crate::worker::Worker;
 use crate::errors::ExecutorError;
 
@@ -49,13 +50,25 @@ impl Executor for Worker {
     ) -> Result<Response<JobResponse>, Status> {
         println!("Received job to execute...");
 
-        // RAII credit guard to send credit update back to Orchestrator when dropped
-        let _credit_guard = CreditGuard::new(self);
-
+        // Extract request info
         let request = request.into_inner();
+        let job_id = Uuid::from_slice(&request.job_id)
+            .unwrap_or_else(|e| panic!("received malformed uuid: {}", e));
         let wasm_bytes = request.wasm_bytes;
-        let mut wasi_args = vec![String::from_utf8_lossy(&request.job_id).to_string()];
+        let mut wasi_args = vec![job_id.to_string()];
         wasi_args.extend(request.args);
+
+
+        // RAII credit guard to send credit update back to Orchestrator when dropped
+        // and removes cancellation token
+        let cancellation_token = CancellationToken::new();
+        self.cancellation_tokens.insert(job_id, cancellation_token.clone());
+        let _credit_guard = JobGuard::new(
+            self.orchestrator_tx.clone(), 
+            self.cancellation_tokens.clone(),
+            job_id
+        );
+        
         
         // TODO: cache component once compiled
         let engine = self.wasm_engine.clone();
@@ -73,17 +86,26 @@ impl Executor for Worker {
             .args(&wasi_args)
             .stdout(stdout_pipe.clone())
             .stderr(stderr_pipe.clone())
+            // .inherit_network() // TODO: check if i should use this
             .build();
 
         // TODO: add env and file system
         let state = ComponentRunStates::new(wasi_ctx);
         let mut store = Store::new(&self.wasm_engine, state);
-        store.set_epoch_deadline(u64::MAX);
+
+        store.epoch_deadline_async_yield_and_update(1);
+        store.set_epoch_deadline(1);
 
         let command = Command::instantiate_async(&mut store, &component, &self.wasm_linker).await
             .map_err(ExecutorError::InstantiationFailed)?;
 
-        let run_result = command.wasi_cli_run().call_run(&mut store).await;
+        let run_result = tokio::select! {
+            result = command.wasi_cli_run().call_run(&mut store) => result,
+            _ = cancellation_token.cancelled() => {
+                return Err(ExecutorError::JobCancelled.into())
+            }
+        };
+
         let stdout = stdout_pipe.contents().to_vec();
         let stderr = stderr_pipe.contents().to_vec();
 
@@ -111,8 +133,18 @@ impl Executor for Worker {
         request: Request<CancelJobRequest>
     ) -> Result<Response<CancelJobResponse>, Status> {
         let job_id = Uuid::from_slice(&request.into_inner().job_id)
-            .map_err(ExecutorError::InvalidJobId)?;
-
-        return Ok(Response::new(CancelJobResponse {}))
+            .unwrap_or_else(|e| panic!("received malformed job id: {}", e));
+        
+        // Cancel the job via the cancellation token
+        match self.cancellation_tokens.get(&job_id) {
+            Some(cancellation_token) => {
+                cancellation_token.cancel();
+                self.wasm_engine.increment_epoch(); // increment the epoch immediately so control is yielded back
+                Ok(Response::new(CancelJobResponse {}))
+            },
+            None => {
+                Err(ExecutorError::JobNotFound.into())
+            }
+        }
     }
 }

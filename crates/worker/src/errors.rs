@@ -10,8 +10,11 @@ pub enum ExecutorError {
     #[error("wasm execution failed: {0}")]
     ExecutionFailed(String),
 
-    #[error("invalid job id: {0}")]
-    InvalidJobId(#[from] uuid::Error),
+    #[error("job not found")]
+    JobNotFound,
+
+    #[error("job cancelled by client")]
+    JobCancelled,
 
     #[error("unknown error: {0}")]
     Unknown(String),
@@ -23,7 +26,8 @@ impl From<ExecutorError> for tonic::Status {
             ExecutorError::CompilationFailed(_) => tonic::Status::invalid_argument(e.to_string()),
             ExecutorError::InstantiationFailed(_) => tonic::Status::invalid_argument(e.to_string()),
             ExecutorError::ExecutionFailed(_) => tonic::Status::invalid_argument(e.to_string()),
-            ExecutorError::InvalidJobId(_) => tonic::Status::invalid_argument(e.to_string()),
+            ExecutorError::JobNotFound => tonic::Status::invalid_argument(e.to_string()),
+            ExecutorError::JobCancelled => tonic::Status::cancelled(e.to_string()),
             ExecutorError::Unknown(_) => tonic::Status::unknown(e.to_string()),
         }
     }

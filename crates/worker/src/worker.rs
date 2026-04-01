@@ -1,8 +1,13 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
 
+use dashmap::DashMap;
 use tokio::sync::mpsc;
 
 use shared::{WorkerMessage};
+use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 use wasmtime::component::Linker;
 use wasmtime::{Config, Engine};
 
@@ -20,6 +25,7 @@ pub struct Worker {
     pub addr: SocketAddr,
     pub wasm_engine: Engine,
     pub wasm_linker: Linker<ComponentRunStates>,
+    pub cancellation_tokens: Arc<DashMap<Uuid, CancellationToken>>,
 
     // Fields relating to communication with the Orchestrator
     pub orchestrator_tx: mpsc::Sender<WorkerMessage>,
@@ -36,6 +42,16 @@ impl Worker {
         wasmtime_wasi::p2::add_to_linker_async(&mut wasm_linker)
             .unwrap_or_else(|e| panic!("Failed to add WASI to the linker: {e}"));
 
+        // Create the background tasks that increments epoch
+        let engine = wasm_engine.clone();
+        tokio::task::spawn(async move {
+            let mut inteval = tokio::time::interval(Duration::from_millis(10));
+            loop {
+                inteval.tick().await;
+                engine.increment_epoch();
+            }
+        });
+
 
         // Set up communication with Orchestrator
         let (orchestrator_tx, inbound) = Worker::connect_to_orchestrator(orchestrator_endpoint).await;
@@ -45,6 +61,7 @@ impl Worker {
             addr,
             wasm_engine,
             wasm_linker,
+            cancellation_tokens: Arc::new(DashMap::new()),
             orchestrator_tx,
         };
 
