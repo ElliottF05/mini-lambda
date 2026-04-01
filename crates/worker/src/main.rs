@@ -2,6 +2,7 @@ mod worker;
 mod executor;
 mod errors;
 mod orchestrator_client;
+mod credit_guard;
 
 use clap::Parser;
 use tokio::net::TcpListener;

@@ -4,7 +4,7 @@ fn main() {
         Some(s) => s,
         None => {
             eprintln!("Usage: <program> <n>");
-            std::process::exit(2);
+            std::process::exit(1);
         }
     };
 
@@ -12,7 +12,7 @@ fn main() {
         Ok(v) => v,
         Err(_) => {
             eprintln!("invalid number: {}", n_str);
-            std::process::exit(2);
+            std::process::exit(1);
         }
     };
 

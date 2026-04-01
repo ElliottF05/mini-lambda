@@ -1,6 +1,4 @@
-use std::sync::atomic::Ordering;
-
-use shared::{CreditUpdate, OrchestratorMessage, WorkerRegistration, orchestrator_message, worker_api_client::WorkerApiClient, worker_message};
+use shared::{OrchestratorMessage, WorkerRegistration, orchestrator_message, worker_api_client::WorkerApiClient, worker_message};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
@@ -34,7 +32,7 @@ impl Worker {
 
     /// Start a bidirectional communication session with the Orchestrator. This consists of 
     /// spawing a task to process inbound messages, and sending the initial registration message.
-    pub async fn start_orchestrator_session(&self, mut inbound: Streaming<OrchestratorMessage>) {
+    pub async fn start_orchestrator_session(&self, mut inbound: Streaming<OrchestratorMessage>, credits: u32) {
         // Spawn a task to handle incoming messages from the orchestrator
         let worker_clone = self.clone();
         tokio::spawn(async move {
@@ -45,27 +43,27 @@ impl Worker {
             std::process::exit(1);
         });
 
-        // Send the initial registration message and credit update
+        // Send the initial registration message and initial credit update
+        let address = self.addr.to_string();
         self.orchestrator_tx.send(WorkerMessage {
-            message: Some(worker_message::Message::Registration(WorkerRegistration { address: self.addr.to_string() }))
+            message: Some(worker_message::Message::Registration(WorkerRegistration { address, credits }))
         }).await.unwrap_or_else(|e| panic!("Channel to Orchestrator should be working for initial registration, got error {}", e));
-        self.send_credit_update();
     }
 
     /// Sends a credit update to the Orchestrator with the current available credit count
     /// for this worker. Spawns a background task to do this, does not block the caller.
-    pub fn send_credit_update(&self) {
-        let tx= self.orchestrator_tx.clone();
-        let credits = self.credits.load(Ordering::Relaxed);
-        tokio::spawn(async move {
-            if tx.send(WorkerMessage { 
-                message: Some(worker_message::Message::CreditUpdate(CreditUpdate { credits }))
-            }).await.is_err() {
-                eprintln!("Lost connection to the Orchestrator, shutting down");
-                std::process::exit(1);
-            }
-        });
-    }
+    // pub fn send_credit_update(&self) {
+    //     let tx= self.orchestrator_tx.clone();
+    //     let credits = self.credits.load(Ordering::Relaxed);
+    //     tokio::spawn(async move {
+    //         if tx.send(WorkerMessage { 
+    //             message: Some(worker_message::Message::CreditUpdate(CreditUpdate { credits }))
+    //         }).await.is_err() {
+    //             eprintln!("Lost connection to the Orchestrator, shutting down");
+    //             std::process::exit(1);
+    //         }
+    //     });
+    // }
 
     /// Handles all incoming messages from the Orchestrator.
     pub async fn handle_orchestrator_message(&self, result: Result<OrchestratorMessage, Status>) {

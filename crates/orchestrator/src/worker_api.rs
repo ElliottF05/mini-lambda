@@ -81,8 +81,13 @@ impl Orchestrator {
     /// Handles an incoming Worker registration message.
     async fn handle_worker_registration(&self, tx: OutboundTx, registration: &shared::WorkerRegistration) {
         println!("Handling worker registration: {:?}", registration);
+        {
+            let mut queue = self.job_queue.write().await;
+            let mut registry = self.registry.write().await;
 
-        self.registry.write().await.register_worker(registration.address.clone(), 0);
+            registry.register_worker(registration.address.to_owned(), registration.credits);
+            Self::dispatch_pending_jobs(&mut queue, &mut registry);
+        }
 
         // Send registration ack back to worker
         let ack = OrchestratorMessage {
@@ -103,7 +108,7 @@ impl Orchestrator {
         let mut queue = self.job_queue.write().await;
         let mut registry = self.registry.write().await;
 
-        registry.update_credits(worker_address, credit_update.credits);
+        registry.update_credits(worker_address, credit_update.delta);
         Self::dispatch_pending_jobs(&mut queue, &mut registry);
     }
 
