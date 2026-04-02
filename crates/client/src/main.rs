@@ -1,7 +1,7 @@
 use tonic::Request;
 use clap::Parser;
 
-use shared::client_api_client::ClientApiClient;
+use shared::client_api_client::ClientApiClient as ClientApi;
 use shared::executor_client::ExecutorClient;
 use shared::{JobRequest, WorkerRequest};
 use uuid::Uuid;
@@ -21,7 +21,7 @@ pub async fn main() {
     let args = Args::parse();
 
     let orchestrator_endpoint = args.orchestrator;
-    let mut orchestrator_client = ClientApiClient::connect(orchestrator_endpoint).await
+    let mut orchestrator_client = ClientApi::connect(orchestrator_endpoint).await
         .unwrap_or_else(|e| panic!("Failed to connect to the Orchestrator: {}", e));
 
     let job_id = Uuid::new_v4().as_bytes().to_vec();

@@ -9,3 +9,4 @@ tonic = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 clap = { workspace = true }
 uuid = { workspace = true }
+thiserror = { workspace = true }

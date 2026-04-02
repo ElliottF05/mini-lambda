@@ -6,7 +6,7 @@ use shared::{CancelJobRequest, CancelJobResponse, WorkerRequest, WorkerResponse}
 use uuid::Uuid;
 
 use crate::orchestrator::Orchestrator;
-use crate::errors::ClientError;
+use crate::errors::OrchestratorError;
 
 /// Implementation of the CliApi service for the Orchestrator.
 #[tonic::async_trait]
@@ -21,7 +21,7 @@ impl ClientApi for Orchestrator {
 
         // Create the pending job
         let job_id = Uuid::from_slice(&request.into_inner().job_id)
-            .map_err(ClientError::InvalidJobId)?;
+            .unwrap_or_else(|e| panic!("received malformed job id: {}", e));
         let (tx, rx) = oneshot::channel();
 
         // Add this job to the queue and dispatch pending jobs atomically
@@ -39,7 +39,7 @@ impl ClientApi for Orchestrator {
                 println!("Worker at {} became available, dequeueing job with id {}", response.worker_address, job_id);
                 Ok(Response::new(response))
             },
-            Err(_) => Err(ClientError::JobCancelled.into())
+            Err(_) => Err(OrchestratorError::JobCancelled.into())
         }
     }
 
@@ -51,12 +51,13 @@ impl ClientApi for Orchestrator {
         &self,
         request: Request<CancelJobRequest>
     ) -> Result<Response<CancelJobResponse>, Status> {
-
         let job_id = Uuid::from_slice(&request.into_inner().job_id)
-            .map_err(ClientError::InvalidJobId)?;
+            .unwrap_or_else(|e| panic!("received malformed job id: {}", e));
 
-        self.job_queue.write().await.cancel(&job_id);
-
-        Ok(Response::new(CancelJobResponse {}))
+        if self.job_queue.write().await.cancel(&job_id) {
+            Ok(Response::new(CancelJobResponse {}))
+        } else {
+            Err(OrchestratorError::JobNotFound.into())
+        }
     }
 }
