@@ -15,8 +15,8 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn connect(orchestrator_endpoint: String) -> Client {
-        let orchestrator_client = ClientApiClient::connect(orchestrator_endpoint).await
+    pub async fn connect(orchestrator_endpoint: &str) -> Client {
+        let orchestrator_client = ClientApiClient::connect(orchestrator_endpoint.to_string()).await
             .unwrap_or_else(|e| panic!("Failed to connect to the Orchestrator: {}", e));
 
         Client {

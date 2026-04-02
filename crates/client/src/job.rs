@@ -1,4 +1,5 @@
 use std::{ops::Deref, path::Path, time::Duration};
+use std::fmt::Display;
 
 use shared::{JobResponse, WorkerResponse};
 use tokio::{sync::watch, task::AbortHandle};
@@ -27,8 +28,8 @@ impl Job {
             Err(e) => Err(e)
         }
     }
-    pub fn arg(mut self, arg: &str) -> Self {
-        self.args.push(arg.to_string());
+    pub fn arg(mut self, arg: impl AsRef<str>) -> Self {
+        self.args.push(arg.as_ref().to_string());
         self
     }
     pub fn args(mut self, args: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
@@ -92,4 +93,14 @@ impl RunningJob {
 pub struct JobOutput {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
+}
+
+impl Display for JobOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", String::from_utf8_lossy(&self.stdout))?;
+        if !self.stderr.is_empty() {
+            write!(f, "\nstderr:\n{}", String::from_utf8_lossy(&self.stderr))?;
+        }
+        Ok(())
+    }
 }

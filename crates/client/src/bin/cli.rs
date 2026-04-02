@@ -16,10 +16,10 @@ struct Args {
 pub async fn main() {
     let args = Args::parse();
     let job = Job::from_path(&args.wasm_path)
-        .expect("wasm file path not found")
+        .unwrap_or_else(|e| panic!("wasm file path not found: {}", e))
         .args(args.wasm_args);
 
-    let mut client = Client::connect(args.orchestrator).await;
+    let mut client = Client::connect(&args.orchestrator).await;
     let result = client.submit_job(job).wait().await;
     match result {
         Ok(output) => {

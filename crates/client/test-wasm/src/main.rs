@@ -3,7 +3,7 @@ fn main() {
     let n_str = match arg {
         Some(s) => s,
         None => {
-            eprintln!("Usage: <program> <n>");
+            eprint!("Usage: <program> <n>");
             std::process::exit(1);
         }
     };
@@ -11,13 +11,13 @@ fn main() {
     let n: u32 = match n_str.parse() {
         Ok(v) => v,
         Err(_) => {
-            eprintln!("invalid number: {}", n_str);
+            eprint!("invalid number: {}", n_str);
             std::process::exit(1);
         }
     };
 
     let res = fib(n);
-    println!("fib({n}) = {res}");
+    print!("fib({n}) = {res}");
 }
 
 fn fib(n: u32) -> u32 {
