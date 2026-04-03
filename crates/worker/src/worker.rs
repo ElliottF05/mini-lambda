@@ -1,14 +1,17 @@
 use std::net::SocketAddr;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
+use blake3::Hash;
 use dashmap::DashMap;
-use tokio::sync::mpsc;
+use lru::LruCache;
+use tokio::sync::{OnceCell, RwLock, mpsc};
 
 use shared::{WorkerMessage};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
-use wasmtime::component::Linker;
+use wasmtime::component::{Component, Linker};
 use wasmtime::{Config, Engine};
 
 use crate::executor::ComponentRunStates;
@@ -26,6 +29,7 @@ pub struct Worker {
     pub wasm_engine: Engine,
     pub wasm_linker: Linker<ComponentRunStates>,
     pub cancellation_tokens: Arc<DashMap<Uuid, CancellationToken>>,
+    pub component_cache: Arc<RwLock<LruCache<Hash, Arc<OnceCell<Component>>>>>,
 
     // Fields relating to communication with the Orchestrator
     pub orchestrator_tx: mpsc::Sender<WorkerMessage>,
@@ -63,6 +67,7 @@ impl Worker {
             wasm_linker,
             cancellation_tokens: Arc::new(DashMap::new()),
             orchestrator_tx,
+            component_cache: Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(64).unwrap())))
         };
 
         // Begin the bidirectional communication session with the Orchestrator

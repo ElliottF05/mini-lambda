@@ -15,3 +15,5 @@ uuid = { workspace = true }
 wasmtime = { version = "43.0.0" }
 wasmtime-wasi = { version = "43.0.0" }
 dashmap = { version = "6.1.0" }
+blake3 = {version = "1.8.4" }
+lru = { version = "0.16.3" }

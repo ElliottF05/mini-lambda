@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
 use tonic::{Request, Status, Response};
 use uuid::Uuid;
@@ -69,16 +72,23 @@ impl Executor for Worker {
             self.cancellation_tokens.clone(),
             job_id
         );
-        
-        
-        // TODO: cache component once compiled
-        let engine = self.wasm_engine.clone();
-        let component = tokio::task::spawn_blocking(move || {
-            Component::from_binary(&engine, &wasm_bytes)
-                .map_err(ExecutorError::CompilationFailed)
+
+        let wasm_hash = blake3::hash(&wasm_bytes);
+
+        let cell = self.component_cache.write().await
+            .get_or_insert(wasm_hash, || Arc::new(OnceCell::new()))
+            .clone();
+
+        let component = cell.get_or_try_init(|| async {
+            let engine = self.wasm_engine.clone();
+            tokio::task::spawn_blocking(move || {
+                Component::from_binary(&engine, &wasm_bytes)
+                    .map_err(ExecutorError::CompilationFailed)
+            })
+            .await
+            .unwrap_or_else(|e| panic!("compilation task panicked: {e}"))
         })
-        .await
-        .unwrap_or_else(|e| panic!("compilation task panicked: {e}"))?;
+        .await?;
 
         let stdout_pipe = MemoryOutputPipe::new(10 * 1024 * 1024); // 10 MB
         let stderr_pipe = MemoryOutputPipe::new(10 * 1024 * 1024); // 10 MB
@@ -96,7 +106,7 @@ impl Executor for Worker {
         store.epoch_deadline_async_yield_and_update(1);
         store.set_epoch_deadline(1);
 
-        let command = Command::instantiate_async(&mut store, &component, &self.wasm_linker).await
+        let command = Command::instantiate_async(&mut store, component, &self.wasm_linker).await
             .map_err(ExecutorError::InstantiationFailed)?;
 
         let run_result = tokio::select! {
