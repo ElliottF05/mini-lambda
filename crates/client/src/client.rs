@@ -5,7 +5,7 @@ use shared::executor_client::ExecutorClient;
 use shared::{WorkerRequest, client_api_client::ClientApiClient};
 use tokio::sync::watch;
 use tonic::transport::Channel;
-use tonic::{Code, Request, Status};
+use tonic::{Request, Status};
 use uuid::Uuid;
 
 use crate::job::{Job, JobError, JobOutput, JobState, RunningJob};

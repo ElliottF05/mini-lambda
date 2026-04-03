@@ -21,7 +21,7 @@ impl ClientApi for Orchestrator {
 
         // Create the pending job
         let job_id = Uuid::from_slice(&request.into_inner().job_id)
-            .unwrap_or_else(|e| panic!("received malformed job id: {}", e));
+            .map_err(|e| OrchestratorError::MalformedJobId(e.to_string()))?;
         let (tx, rx) = oneshot::channel();
 
         // Add this job to the queue and dispatch pending jobs atomically
@@ -52,7 +52,7 @@ impl ClientApi for Orchestrator {
         request: Request<CancelJobRequest>
     ) -> Result<Response<CancelJobResponse>, Status> {
         let job_id = Uuid::from_slice(&request.into_inner().job_id)
-            .unwrap_or_else(|e| panic!("received malformed job id: {}", e));
+            .map_err(|e| OrchestratorError::MalformedJobId(e.to_string()))?;
 
         if self.job_queue.write().await.cancel(&job_id) {
             Ok(Response::new(CancelJobResponse {}))
