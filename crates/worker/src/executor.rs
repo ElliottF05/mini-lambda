@@ -18,7 +18,7 @@ use crate::job_guard::JobGuard;
 use crate::worker::Worker;
 use crate::errors::ExecutorError;
 
-// Required by wasmtime
+/// Required by wasmtime
 pub struct ComponentRunStates {
     pub wasi_ctx: WasiCtx,
     pub resource_table: ResourceTable,
@@ -75,7 +75,7 @@ impl Executor for Worker {
 
         let wasm_hash = blake3::hash(&wasm_bytes);
 
-        let cell = self.component_cache.write().await
+        let cell = self.component_cache.lock().await
             .get_or_insert(wasm_hash, || Arc::new(OnceCell::new()))
             .clone();
 

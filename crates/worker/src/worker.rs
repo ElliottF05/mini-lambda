@@ -6,7 +6,7 @@ use std::time::Duration;
 use blake3::Hash;
 use dashmap::DashMap;
 use lru::LruCache;
-use tokio::sync::{OnceCell, RwLock, mpsc};
+use tokio::sync::{OnceCell, Mutex, mpsc};
 
 use shared::{WorkerMessage};
 use tokio_util::sync::CancellationToken;
@@ -19,17 +19,17 @@ use crate::executor::ComponentRunStates;
 /// Worker struct representing the main Worker component.
 /// It implements the Executor service, see executor.rs for details.
 /// It also communicates bidirectionally with the Orchestrator, via its orchestrator_tx channel.
-/// Worker internally uses Arc<RwLock<_>> so can be cloned cheaply.
+/// Worker internally uses Arc<RwLock/Mutex<_>> so can be cloned cheaply.
 #[derive(Clone)]
 pub struct Worker {
-    // note: all shared state fields should use Arc<RwLock<...>> for thread safety
+    // note: all shared state fields should use Arc<RwLock/Mutex<...>> for thread safety
 
     // Fields relating to the Executor service.
     pub addr: SocketAddr,
     pub wasm_engine: Engine,
     pub wasm_linker: Linker<ComponentRunStates>,
     pub cancellation_tokens: Arc<DashMap<Uuid, CancellationToken>>,
-    pub component_cache: Arc<RwLock<LruCache<Hash, Arc<OnceCell<Component>>>>>,
+    pub component_cache: Arc<Mutex<LruCache<Hash, Arc<OnceCell<Component>>>>>,
 
     // Fields relating to communication with the Orchestrator
     pub orchestrator_tx: mpsc::Sender<WorkerMessage>,
@@ -67,7 +67,7 @@ impl Worker {
             wasm_linker,
             cancellation_tokens: Arc::new(DashMap::new()),
             orchestrator_tx,
-            component_cache: Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(64).unwrap())))
+            component_cache: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())))
         };
 
         // Begin the bidirectional communication session with the Orchestrator

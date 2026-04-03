@@ -26,8 +26,8 @@ impl ClientApi for Orchestrator {
 
         // Add this job to the queue and dispatch pending jobs atomically
         {
-            let mut queue = self.job_queue.write().await;
-            let mut registry = self.registry.write().await;
+            let mut queue = self.job_queue.lock().await;
+            let mut registry = self.registry.lock().await;
 
             queue.enqueue(job_id, tx);
             Self::dispatch_pending_jobs(&mut queue, &mut registry);
@@ -54,7 +54,7 @@ impl ClientApi for Orchestrator {
         let job_id = Uuid::from_slice(&request.into_inner().job_id)
             .map_err(|e| OrchestratorError::MalformedJobId(e.to_string()))?;
 
-        if self.job_queue.write().await.cancel(&job_id) {
+        if self.job_queue.lock().await.cancel(&job_id) {
             Ok(Response::new(CancelJobResponse {}))
         } else {
             Err(OrchestratorError::JobNotFound.into())

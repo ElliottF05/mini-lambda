@@ -66,7 +66,7 @@ impl WorkerApi for Orchestrator {
                 }
             }
             println!("Worker disconnected");
-            orchestrator.registry.write().await.deregister_worker(&worker_address);
+            orchestrator.registry.lock().await.deregister_worker(&worker_address);
         });
 
         Ok(Response::new(ReceiverStream::new(rx)))
@@ -82,8 +82,8 @@ impl Orchestrator {
     async fn handle_worker_registration(&self, tx: OutboundTx, registration: &shared::WorkerRegistration) {
         println!("Handling worker registration: {:?}", registration);
         {
-            let mut queue = self.job_queue.write().await;
-            let mut registry = self.registry.write().await;
+            let mut queue = self.job_queue.lock().await;
+            let mut registry = self.registry.lock().await;
 
             registry.register_worker(registration.address.to_owned(), registration.credits);
             Self::dispatch_pending_jobs(&mut queue, &mut registry);
@@ -105,8 +105,8 @@ impl Orchestrator {
     /// Handles a credit update from a Worker, updating its available credits in the registry
     /// and dispatching any pending jobs that can now be served.
     async fn handle_credit_update(&self, worker_address: &str, credit_update: CreditUpdate) {
-        let mut queue = self.job_queue.write().await;
-        let mut registry = self.registry.write().await;
+        let mut queue = self.job_queue.lock().await;
+        let mut registry = self.registry.lock().await;
 
         registry.update_credits(worker_address, credit_update.delta);
         Self::dispatch_pending_jobs(&mut queue, &mut registry);
