@@ -16,8 +16,8 @@ async fn main() {
     let mut handles = vec![];
     for _ in 0..50 {
         let job = Job::from_bytes(wasm_bytes.clone())
-            .arg(30.to_string())
-            .timeout(Duration::from_secs(3));
+            .arg(3.to_string())
+            .timeout(Duration::from_secs(10));
         handles.push(client.submit_job(job));
     }
 

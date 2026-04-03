@@ -10,6 +10,10 @@ pub enum ExecutorError {
     #[error("wasm execution failed: {0}")]
     ExecutionFailed(String),
 
+    #[error("malformed job id, job failed")] 
+    MalformedJobId, // note that a malformed job id in cancel_job just returns a JobNotFound error,
+    // since this makes more logical sense
+
     #[error("job not found")]
     JobNotFound,
 
@@ -26,7 +30,8 @@ impl From<ExecutorError> for tonic::Status {
             ExecutorError::CompilationFailed(_) => tonic::Status::invalid_argument(e.to_string()),
             ExecutorError::InstantiationFailed(_) => tonic::Status::invalid_argument(e.to_string()),
             ExecutorError::ExecutionFailed(_) => tonic::Status::invalid_argument(e.to_string()),
-            ExecutorError::JobNotFound => tonic::Status::invalid_argument(e.to_string()),
+            ExecutorError::MalformedJobId => tonic::Status::internal(e.to_string()),
+            ExecutorError::JobNotFound => tonic::Status::not_found(e.to_string()),
             ExecutorError::JobCancelled => tonic::Status::cancelled(e.to_string()),
             ExecutorError::Unknown(_) => tonic::Status::unknown(e.to_string()),
         }

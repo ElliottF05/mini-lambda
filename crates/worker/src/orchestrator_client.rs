@@ -50,21 +50,6 @@ impl Worker {
         }).await.unwrap_or_else(|e| panic!("Channel to Orchestrator should be working for initial registration, got error {}", e));
     }
 
-    /// Sends a credit update to the Orchestrator with the current available credit count
-    /// for this worker. Spawns a background task to do this, does not block the caller.
-    // pub fn send_credit_update(&self) {
-    //     let tx= self.orchestrator_tx.clone();
-    //     let credits = self.credits.load(Ordering::Relaxed);
-    //     tokio::spawn(async move {
-    //         if tx.send(WorkerMessage { 
-    //             message: Some(worker_message::Message::CreditUpdate(CreditUpdate { credits }))
-    //         }).await.is_err() {
-    //             eprintln!("Lost connection to the Orchestrator, shutting down");
-    //             std::process::exit(1);
-    //         }
-    //     });
-    // }
-
     /// Handles all incoming messages from the Orchestrator.
     pub async fn handle_orchestrator_message(&self, result: Result<OrchestratorMessage, Status>) {
         match result {

@@ -1,5 +1,3 @@
-use std::usize;
-
 use tokio_util::sync::CancellationToken;
 use tonic::{Request, Status, Response};
 use uuid::Uuid;
@@ -56,7 +54,7 @@ impl Executor for Worker {
         // Extract request info
         let request = request.into_inner();
         let job_id = Uuid::from_slice(&request.job_id)
-            .unwrap_or_else(|e| panic!("received malformed uuid: {}", e));
+            .map_err(|_| ExecutorError::MalformedJobId)?;
         let wasm_bytes = request.wasm_bytes;
         let mut wasi_args = vec![job_id.to_string()];
         wasi_args.extend(request.args);
@@ -82,14 +80,13 @@ impl Executor for Worker {
         .await
         .unwrap_or_else(|e| panic!("compilation task panicked: {e}"))?;
 
-        let stdout_pipe = MemoryOutputPipe::new(usize::MAX);
-        let stderr_pipe = MemoryOutputPipe::new(usize::MAX);
+        let stdout_pipe = MemoryOutputPipe::new(10 * 1024 * 1024); // 10 MB
+        let stderr_pipe = MemoryOutputPipe::new(10 * 1024 * 1024); // 10 MB
 
         let wasi_ctx = WasiCtx::builder()
             .args(&wasi_args)
             .stdout(stdout_pipe.clone())
             .stderr(stderr_pipe.clone())
-            // .inherit_network() // TODO: check if i should use this
             .build();
 
         // TODO: add env and file system
@@ -136,7 +133,7 @@ impl Executor for Worker {
         request: Request<CancelJobRequest>
     ) -> Result<Response<CancelJobResponse>, Status> {
         let job_id = Uuid::from_slice(&request.into_inner().job_id)
-            .unwrap_or_else(|e| panic!("received malformed job id: {}", e));
+            .map_err(|_| ExecutorError::JobNotFound)?;
         
         // Cancel the job via the cancellation token
         match self.cancellation_tokens.get(&job_id) {

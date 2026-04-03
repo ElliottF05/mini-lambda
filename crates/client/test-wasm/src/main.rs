@@ -1,3 +1,5 @@
+use std::{thread::sleep, time::Duration};
+
 fn main() {
     let arg = std::env::args().nth(1);
     let n_str = match arg {
@@ -15,9 +17,13 @@ fn main() {
             std::process::exit(1);
         }
     };
+    
+    // let res = fib(n);
+    // print!("fib({n}) = {res}");
 
-    let res = fib(n);
-    print!("fib({n}) = {res}");
+    sleep(Duration::from_secs(n.into()));
+    print!("slept for {} seconds", n);
+
 }
 
 fn fib(n: u32) -> u32 {
