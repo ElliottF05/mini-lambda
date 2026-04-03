@@ -21,11 +21,12 @@ message WorkerMessage {
 // Initial registration message sent by the Worker.
 message WorkerRegistration {
     string address = 1;
+    uint32 credits = 2;
 }
 
-// Sent by a Worker to report its current available credit count.
+// Sent by a Worker to report a *change* in available credit count (not an absolute value).
 message CreditUpdate {
-    uint32 credits = 1;
+    uint32 delta = 1;
 }
 
 

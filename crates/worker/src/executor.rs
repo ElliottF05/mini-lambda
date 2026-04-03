@@ -1,18 +1,46 @@
-use std::io::Read;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
+use tokio::sync::OnceCell;
+use tokio_util::sync::CancellationToken;
 use tonic::{Request, Status, Response};
 use uuid::Uuid;
-use wasmer::Module;
-use wasmer_wasix::runners::wasi::{RuntimeOrEngine, WasiRunner};
-use wasmer_wasix::{Pipe, WasiProcess};
 
 use shared::executor_server::Executor;
 use shared::{CancelJobRequest, CancelJobResponse, JobRequest, JobResponse};
 
+use wasmtime::Store;
+use wasmtime::component::{Component, ResourceTable};
+use wasmtime_wasi::p2::bindings::Command;
+use wasmtime_wasi::p2::pipe::MemoryOutputPipe;
+use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
+
+use crate::job_guard::JobGuard;
 use crate::worker::Worker;
 use crate::errors::ExecutorError;
+
+/// Required by wasmtime
+pub struct ComponentRunStates {
+    pub wasi_ctx: WasiCtx,
+    pub resource_table: ResourceTable,
+}
+
+/// Exposes the WASI context and resource table to wasmtime-wasi's host function implementations.
+impl WasiView for ComponentRunStates {
+    fn ctx(&mut self) -> WasiCtxView<'_> {
+        WasiCtxView {
+            ctx: &mut self.wasi_ctx,
+            table: &mut self.resource_table,
+        }
+    }
+}
+
+impl ComponentRunStates {
+    /// An easy way to create a ComponentRunStates with a default ResourceTable and the
+    /// given WasiCtx
+    pub fn new(wasi_ctx: WasiCtx) -> Self {
+        Self { wasi_ctx, resource_table: ResourceTable::new() }
+    }
+}
 
 /// Implementation of the Executor service for Worker.
 #[tonic::async_trait]
@@ -26,71 +54,85 @@ impl Executor for Worker {
     ) -> Result<Response<JobResponse>, Status> {
         println!("Received job to execute...");
 
-        // Decrement credits when beginning job execution
-        self.credits.fetch_sub(1, Ordering::Relaxed);
-
+        // Extract request info
         let request = request.into_inner();
+        let job_id = Uuid::from_slice(&request.job_id)
+            .map_err(|_| ExecutorError::MalformedJobId)?;
         let wasm_bytes = request.wasm_bytes;
-        let args = request.args;
-        let runtime = self.wasm_runtime.clone();
+        let mut wasi_args = vec![job_id.to_string()];
+        wasi_args.extend(request.args);
 
-        // Run the compilation and wasm execution on a separate blocking task
-        let result = tokio::task::spawn_blocking(move || -> Result<(Vec<u8>, Vec<u8>), ExecutorError> {
-            // Compile the wasm module
-            let wasm_module = Module::new(&runtime.engine, wasm_bytes)?;
 
-            // Create pipes to capture stdout and stderr, and buffers for their contents
-            let (stdout_tx, mut stdout_rx) = Pipe::channel();
-            let (stderr_tx, mut stderr_rx) = Pipe::channel();
-            let mut stdout_buf = vec![];
-            let mut stderr_buf = vec![];
-            
-            let run_result = {
-                // Configure the runtime environment and run it
-                let mut runner = WasiRunner::new();
-                runner
-                    .with_stdout(Box::new(stdout_tx))
-                    .with_stderr(Box::new(stderr_tx))
-                    .with_args(args);
-                // TODO: env, file system, etc
+        // RAII credit guard to send credit update back to Orchestrator when dropped
+        // and removes cancellation token
+        let cancellation_token = CancellationToken::new();
+        self.cancellation_tokens.insert(job_id, cancellation_token.clone());
+        let _credit_guard = JobGuard::new(
+            self.orchestrator_tx.clone(), 
+            self.cancellation_tokens.clone(),
+            job_id
+        );
 
-                // TODO: add program name (job id?)
-                runner.run_wasm(
-                    RuntimeOrEngine::Runtime(Arc::new(runtime)), 
-                    "unnamed", 
-                    wasm_module, 
-                    wasmer_types::ModuleHash::random()
-                )
-            };
-            
-            if let Err(e) = stderr_rx.read_to_end(&mut stderr_buf) {
-                eprintln!("Encountered an error capturing stderr: {e}");
-                if !stderr_buf.is_empty() {
-                    stderr_buf.extend_from_slice(b" | ");
-                }
-                stderr_buf.extend_from_slice(format!("Encountered an error capturing stderr: {e}").as_bytes());
-            }
+        let wasm_hash = blake3::hash(&wasm_bytes);
 
-            run_result.map_err(|e| ExecutorError::ExecutionFailed(format!("{}\nstderr: {}", e, String::from_utf8_lossy(&stderr_buf))))?;
+        let cell = self.component_cache.lock().await
+            .get_or_insert(wasm_hash, || Arc::new(OnceCell::new()))
+            .clone();
 
-            stdout_rx.read_to_end(&mut stdout_buf)
-                .map_err(|e| ExecutorError::OutputCaptureFailed(e.to_string()))?;
-            Ok((stdout_buf, stderr_buf))
+        let component = cell.get_or_try_init(|| async {
+            let engine = self.wasm_engine.clone();
+            tokio::task::spawn_blocking(move || {
+                Component::from_binary(&engine, &wasm_bytes)
+                    .map_err(ExecutorError::CompilationFailed)
+            })
+            .await
+            .unwrap_or_else(|e| panic!("compilation task panicked: {e}"))
         })
-        .await
-        .map_err(ExecutorError::WorkerPanicked);
+        .await?;
 
-        // Increment credits on job completion and send update to Orchestrator
-        self.credits.fetch_add(1, Ordering::Relaxed);
-        self.send_credit_update();
+        let stdout_pipe = MemoryOutputPipe::new(10 * 1024 * 1024); // 10 MB
+        let stderr_pipe = MemoryOutputPipe::new(10 * 1024 * 1024); // 10 MB
 
-        let (stdout_buf, stderr_buf) = result??;
-        let response = JobResponse {
-            stdout: stdout_buf,
-            stderr: stderr_buf
+        let wasi_ctx = WasiCtx::builder()
+            .args(&wasi_args)
+            .stdout(stdout_pipe.clone())
+            .stderr(stderr_pipe.clone())
+            .build();
+
+        // TODO: add env and file system
+        let state = ComponentRunStates::new(wasi_ctx);
+        let mut store = Store::new(&self.wasm_engine, state);
+
+        store.epoch_deadline_async_yield_and_update(1);
+        store.set_epoch_deadline(1);
+
+        let command = Command::instantiate_async(&mut store, component, &self.wasm_linker).await
+            .map_err(ExecutorError::InstantiationFailed)?;
+
+        let run_result = tokio::select! {
+            result = command.wasi_cli_run().call_run(&mut store) => result,
+            _ = cancellation_token.cancelled() => {
+                return Err(ExecutorError::JobCancelled.into())
+            }
         };
 
-        Ok(Response::new(response))
+        let stdout = stdout_pipe.contents().to_vec();
+        let stderr = stderr_pipe.contents().to_vec();
+
+        match run_result {
+            Ok(Ok(())) => Ok(Response::new(JobResponse { stdout, stderr })),
+            Ok(Err(())) => Err(ExecutorError::ExecutionFailed(format!("stderr: {}", String::from_utf8_lossy(&stderr))).into()),
+            Err(e) => {
+                if let Some(exit) = e.downcast_ref::<wasmtime_wasi::I32Exit>() {
+                    match exit.0 {
+                        0 => Ok(Response::new(JobResponse { stdout, stderr })),
+                        code => Err(ExecutorError::ExecutionFailed(format!("exited with code {code}, stderr: {}: {}", code, String::from_utf8_lossy(&stderr))).into()),
+                    }
+                } else {
+                    Err(ExecutorError::Unknown(e.to_string()).into())
+                }
+            }
+        }
     }
 
     /// A function exposed by the Worker for the Client to call
@@ -101,8 +143,18 @@ impl Executor for Worker {
         request: Request<CancelJobRequest>
     ) -> Result<Response<CancelJobResponse>, Status> {
         let job_id = Uuid::from_slice(&request.into_inner().job_id)
-            .map_err(ExecutorError::InvalidJobId)?;
-
-        return Ok(Response::new(CancelJobResponse {}))
+            .map_err(|_| ExecutorError::JobNotFound)?;
+        
+        // Cancel the job via the cancellation token
+        match self.cancellation_tokens.get(&job_id) {
+            Some(cancellation_token) => {
+                cancellation_token.cancel();
+                self.wasm_engine.increment_epoch(); // increment the epoch immediately so control is yielded back
+                Ok(Response::new(CancelJobResponse {}))
+            },
+            None => {
+                Err(ExecutorError::JobNotFound.into())
+            }
+        }
     }
 }

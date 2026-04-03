@@ -2,29 +2,38 @@
 #[derive(Debug, thiserror::Error)]
 pub enum ExecutorError {
     #[error("wasm compilation failed: {0}")]
-    CompilationFailed(#[from] wasmer::CompileError),
+    CompilationFailed(wasmtime::Error),
+
+    #[error("wasm is not a valid wasi command component: {0}")]
+    InstantiationFailed(wasmtime::Error),
 
     #[error("wasm execution failed: {0}")]
     ExecutionFailed(String),
 
-    #[error("failed to capture job output: {0}")]
-    OutputCaptureFailed(String),
+    #[error("malformed job id, job failed")] 
+    MalformedJobId, // note that a malformed job id in cancel_job just returns a JobNotFound error,
+    // since this makes more logical sense
 
-    #[error("executor task panicked: {0}")]
-    WorkerPanicked(#[from] tokio::task::JoinError),
+    #[error("job not found")]
+    JobNotFound,
 
-    #[error("invalid job id: {0}")]
-    InvalidJobId(#[from] uuid::Error),
+    #[error("job cancelled by client")]
+    JobCancelled,
+
+    #[error("unknown error: {0}")]
+    Unknown(String),
 }
 
 impl From<ExecutorError> for tonic::Status {
     fn from(e: ExecutorError) -> Self {
         match e {
             ExecutorError::CompilationFailed(_) => tonic::Status::invalid_argument(e.to_string()),
+            ExecutorError::InstantiationFailed(_) => tonic::Status::invalid_argument(e.to_string()),
             ExecutorError::ExecutionFailed(_) => tonic::Status::invalid_argument(e.to_string()),
-            ExecutorError::OutputCaptureFailed(_) => tonic::Status::internal(e.to_string()),
-            ExecutorError::WorkerPanicked(_) => tonic::Status::internal(e.to_string()),
-            ExecutorError::InvalidJobId(_) => tonic::Status::invalid_argument(e.to_string()),
+            ExecutorError::MalformedJobId => tonic::Status::internal(e.to_string()),
+            ExecutorError::JobNotFound => tonic::Status::not_found(e.to_string()),
+            ExecutorError::JobCancelled => tonic::Status::cancelled(e.to_string()),
+            ExecutorError::Unknown(_) => tonic::Status::unknown(e.to_string()),
         }
     }
 }

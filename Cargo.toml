@@ -18,6 +18,9 @@ tonic-prost-build = { version = "0.14.2", features = [] }
 tonic-prost = { version = "0.14.2", features = [] }
 tokio = { version = "1.49.0", features = ["full"] }
 tokio-stream = { version = "0.1.18", features = [] }
+tokio-util = { version = "0.7.18" }
 thiserror = { version = "2.0.18" }
 clap = { version = "4.6.0", features = ["derive"] }
 uuid = { version = "1.23.0", features = ["v4", "serde"] }
+jsonwebtoken = { version = "10.3.0" }
+rand = { version = "0.10.0" }

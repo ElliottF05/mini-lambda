@@ -1,11 +1,9 @@
-use std::sync::atomic::Ordering;
-
-use shared::{CreditUpdate, OrchestratorMessage, WorkerRegistration, orchestrator_message, worker_api_client::WorkerApiClient, worker_message};
+use shared::{OrchestratorMessage, WorkerRegistration, orchestrator_message, worker_api_client::WorkerApiClient, worker_message};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{Request, Status, Streaming};
+use tonic::{Request, Status, Streaming, transport::Channel};
 
 use shared::{WorkerMessage};
 
@@ -16,9 +14,18 @@ impl Worker {
 
     /// Connects to the Orchestrator and returns a sender for outbound messages,
     /// and a stream for inbound messages.
-    pub async fn connect_to_orchestrator(orchestrator_url: &str) -> (Sender<WorkerMessage>, Streaming<OrchestratorMessage>) {
-        let mut client = WorkerApiClient::connect(orchestrator_url.to_string()).await
-            .unwrap_or_else(|e| panic!("Orchestrator should be reachable at {} before workers start: {}", orchestrator_url, e));
+    pub async fn connect_to_orchestrator(orchestrator_endpoint: &str, password: Option<String>) -> (Sender<WorkerMessage>, Streaming<OrchestratorMessage>) {
+
+        // TODO: handle errors better here
+        let channel = Channel::from_shared(orchestrator_endpoint.to_string()).unwrap().connect().await.unwrap();
+        let mut client = WorkerApiClient::with_interceptor(channel, move |mut req: Request<()>| {
+            if let Some(pass) = &password {
+                let val = pass.parse()
+                    .map_err(|e| Status::invalid_argument(format!("invalid authorization header value: {e}")))?;
+                req.metadata_mut().insert("authorization", val);
+            }
+            Ok(req)
+        });
 
         // Set up channel for streaming
         let (tx, rx) = mpsc::channel(32);
@@ -34,7 +41,7 @@ impl Worker {
 
     /// Start a bidirectional communication session with the Orchestrator. This consists of 
     /// spawing a task to process inbound messages, and sending the initial registration message.
-    pub async fn start_orchestrator_session(&self, mut inbound: Streaming<OrchestratorMessage>) {
+    pub async fn start_orchestrator_session(&self, mut inbound: Streaming<OrchestratorMessage>, credits: u32) {
         // Spawn a task to handle incoming messages from the orchestrator
         let worker_clone = self.clone();
         tokio::spawn(async move {
@@ -45,26 +52,11 @@ impl Worker {
             std::process::exit(1);
         });
 
-        // Send the initial registration message and credit update
+        // Send the initial registration message and initial credit update
+        let address = self.addr.to_string();
         self.orchestrator_tx.send(WorkerMessage {
-            message: Some(worker_message::Message::Registration(WorkerRegistration { address: self.addr.to_string() }))
+            message: Some(worker_message::Message::Registration(WorkerRegistration { address, credits }))
         }).await.unwrap_or_else(|e| panic!("Channel to Orchestrator should be working for initial registration, got error {}", e));
-        self.send_credit_update();
-    }
-
-    /// Sends a credit update to the Orchestrator with the current available credit count
-    /// for this worker. Spawns a background task to do this, does not block the caller.
-    pub fn send_credit_update(&self) {
-        let tx= self.orchestrator_tx.clone();
-        let credits = self.credits.load(Ordering::Relaxed);
-        tokio::spawn(async move {
-            if tx.send(WorkerMessage { 
-                message: Some(worker_message::Message::CreditUpdate(CreditUpdate { credits }))
-            }).await.is_err() {
-                eprintln!("Lost connection to the Orchestrator, shutting down");
-                std::process::exit(1);
-            }
-        });
     }
 
     /// Handles all incoming messages from the Orchestrator.

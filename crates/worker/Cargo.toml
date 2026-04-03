@@ -8,11 +8,12 @@ shared = { path = "../shared" }
 tonic = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-stream = { workspace = true }
-# switch to llvm?
-wasmer = { version = "7.0.1", features = ["cranelift"]}
-wasmer-compiler-cranelift = { version = "7.0.1" }
-wasmer-wasix = { version = "0.700.1" }
-wasmer-types = { version = "7.0.1" }
+tokio-util = { workspace = true }
 thiserror = { workspace = true }
 clap = { workspace = true }
 uuid = { workspace = true }
+wasmtime = { version = "43.0.0" }
+wasmtime-wasi = { version = "43.0.0" }
+dashmap = { version = "6.1.0" }
+blake3 = {version = "1.8.4" }
+lru = { version = "0.16.3" }

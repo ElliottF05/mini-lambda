@@ -38,8 +38,8 @@ impl WorkerRegistry {
 
     /// Update the credit count for a given worker address in the registry.
     /// Logs an error if the worker isn't in the registry.
-    pub fn update_credits(&mut self, worker_address: &str, credits: u32) {
-        if self.inner.change_priority(worker_address, credits).is_none() {
+    pub fn update_credits(&mut self, worker_address: &str, delta: u32) {
+        if !self.inner.change_priority_by(worker_address, |p| *p += delta) {
             eprintln!("Attempted to update credits for an unknown worker: {}", worker_address);
         }
     }

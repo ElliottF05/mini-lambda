@@ -1,55 +1,77 @@
-use std::{net::SocketAddr, sync::atomic::AtomicU32};
+use std::net::SocketAddr;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
+use std::time::Duration;
 
-use tokio::sync::mpsc;
-use wasmer_wasix::PluggableRuntime;
-use wasmer_wasix::runtime::task_manager::tokio::TokioTaskManager;
+use blake3::Hash;
+use dashmap::DashMap;
+use lru::LruCache;
+use tokio::sync::{OnceCell, Mutex, mpsc};
 
 use shared::{WorkerMessage};
+use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
+use wasmtime::component::{Component, Linker};
+use wasmtime::{Config, Engine};
+
+use crate::executor::ComponentRunStates;
 
 /// Worker struct representing the main Worker component.
 /// It implements the Executor service, see executor.rs for details.
 /// It also communicates bidirectionally with the Orchestrator, via its orchestrator_tx channel.
-/// Worker internally uses Arc<RwLock<_>> so can be cloned cheaply.
-#[derive(Debug, Clone)]
+/// Worker internally uses Arc<RwLock/Mutex<_>> so can be cloned cheaply.
+#[derive(Clone)]
 pub struct Worker {
-    // note: all shared state fields should use Arc<RwLock<...>> for thread safety
+    // note: all shared state fields should use Arc<RwLock/Mutex<...>> for thread safety
 
     // Fields relating to the Executor service.
     pub addr: SocketAddr,
-    pub wasm_runtime: PluggableRuntime,
-    // TODO, look into wasmer's built-in caching: 
-    // https://docs.rs/crate/wasmer-wasix/latest/source/src/runtime/module_cache/mod.rs
+    pub wasm_engine: Engine,
+    pub wasm_linker: Linker<ComponentRunStates>,
+    pub cancellation_tokens: Arc<DashMap<Uuid, CancellationToken>>,
+    pub component_cache: Arc<Mutex<LruCache<Hash, Arc<OnceCell<Component>>>>>,
 
     // Fields relating to communication with the Orchestrator
     pub orchestrator_tx: mpsc::Sender<WorkerMessage>,
-
-    // Fields relating to both
-    pub credits: Arc<AtomicU32>
 }
 
 impl Worker {
     /// Create a new Worker instance.
-    pub async fn new(addr: SocketAddr, orchestrator_endpoint: &str, worker_credits: u32) -> Worker {
+    pub async fn new(addr: SocketAddr, orchestrator_endpoint: &str, password: Option<String>, worker_credits: u32) -> Worker {
 
         // Set up Executor fields
-        let tokio_task_manager = TokioTaskManager::new(tokio::runtime::Handle::current());
-        let wasm_runtime = PluggableRuntime::new(Arc::new(tokio_task_manager));
+        let wasm_engine = Engine::new(Config::new().epoch_interruption(true))
+            .unwrap_or_else(|e| panic!("Failed to initialize the wasmtime engine: {e}"));
+        let mut wasm_linker: Linker<ComponentRunStates> = Linker::new(&wasm_engine);
+        wasmtime_wasi::p2::add_to_linker_async(&mut wasm_linker)
+            .unwrap_or_else(|e| panic!("Failed to add WASI to the linker: {e}"));
+
+        // Create the background tasks that increments epoch
+        let engine = wasm_engine.clone();
+        tokio::task::spawn(async move {
+            let mut inteval = tokio::time::interval(Duration::from_millis(10));
+            loop {
+                inteval.tick().await;
+                engine.increment_epoch();
+            }
+        });
 
 
         // Set up communication with Orchestrator
-        let (tx, inbound) = Worker::connect_to_orchestrator(orchestrator_endpoint).await;
+        let (orchestrator_tx, inbound) = Worker::connect_to_orchestrator(orchestrator_endpoint, password).await;
 
         // Create the Worker instance
         let worker = Worker {
             addr,
-            wasm_runtime,
-            orchestrator_tx: tx,
-            credits: Arc::new(AtomicU32::new(worker_credits))
+            wasm_engine,
+            wasm_linker,
+            cancellation_tokens: Arc::new(DashMap::new()),
+            orchestrator_tx,
+            component_cache: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(64).unwrap())))
         };
 
         // Begin the bidirectional communication session with the Orchestrator
-        worker.start_orchestrator_session(inbound).await;
+        worker.start_orchestrator_session(inbound, worker_credits).await;
         worker
     }
 }

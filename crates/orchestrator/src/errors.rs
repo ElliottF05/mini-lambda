@@ -1,18 +1,22 @@
-/// Enum for all recoverable errors that can occur with the ClientApi
+/// Enum for all recoverable errors that can occur within the Orchestrator.
 #[derive(Debug, thiserror::Error)]
-pub enum ClientError {
-    #[error("invalid job id: {0}")]
-    InvalidJobId(#[from] uuid::Error),
-
+pub enum OrchestratorError {
     #[error("job cancelled before worker assigned")]
     JobCancelled,
+
+    #[error("tried to cancel a job which couldn't be found or was already cancelled")]
+    JobNotFound,
+
+    #[error("received malformed job id: {0}")]
+    MalformedJobId(String),
 }
 
-impl From<ClientError> for tonic::Status {
-    fn from(e: ClientError) -> Self {
+impl From<OrchestratorError> for tonic::Status {
+    fn from(e: OrchestratorError) -> Self {
         match e {
-            ClientError::InvalidJobId(_) => tonic::Status::invalid_argument(e.to_string()),
-            ClientError::JobCancelled => tonic::Status::cancelled(e.to_string()),
+            OrchestratorError::JobCancelled => tonic::Status::cancelled(e.to_string()),
+            OrchestratorError::JobNotFound => tonic::Status::not_found(e.to_string()),
+            OrchestratorError::MalformedJobId(_) => tonic::Status::invalid_argument(e.to_string()),
         }
     }
 }
