@@ -12,14 +12,18 @@ pub struct Orchestrator {
     // note: all shared state fields should use Arc<RwLock/Mutex<...>> for thread safety
     pub registry: Arc<Mutex<WorkerRegistry>>,
     pub job_queue: Arc<Mutex<JobQueue>>,
+    pub worker_password: Option<String>,
+    pub client_password: Option<String>,
 }
 
-impl Default for Orchestrator {
-    /// Creates a new Orchestrator instance.
-    fn default() -> Self {
+impl Orchestrator {
+    /// Creates a new Orchestrator instance
+    pub fn new(worker_password: Option<String>, client_password: Option<String>) -> Self {
         Self {
             registry: Arc::new(Mutex::new(WorkerRegistry::new())),
-            job_queue: Arc::new(Mutex::new(JobQueue::new()))
+            job_queue: Arc::new(Mutex::new(JobQueue::new())),
+            worker_password,
+            client_password
         }
     }
 }

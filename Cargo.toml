@@ -22,3 +22,5 @@ tokio-util = { version = "0.7.18" }
 thiserror = { version = "2.0.18" }
 clap = { version = "4.6.0", features = ["derive"] }
 uuid = { version = "1.23.0", features = ["v4", "serde"] }
+jsonwebtoken = { version = "10.3.0" }
+rand = { version = "0.10.0" }

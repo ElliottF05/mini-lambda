@@ -3,7 +3,7 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{Request, Status, Streaming};
+use tonic::{Request, Status, Streaming, transport::Channel};
 
 use shared::{WorkerMessage};
 
@@ -14,9 +14,18 @@ impl Worker {
 
     /// Connects to the Orchestrator and returns a sender for outbound messages,
     /// and a stream for inbound messages.
-    pub async fn connect_to_orchestrator(orchestrator_url: &str) -> (Sender<WorkerMessage>, Streaming<OrchestratorMessage>) {
-        let mut client = WorkerApiClient::connect(orchestrator_url.to_string()).await
-            .unwrap_or_else(|e| panic!("Orchestrator should be reachable at {} before workers start: {}", orchestrator_url, e));
+    pub async fn connect_to_orchestrator(orchestrator_endpoint: &str, password: Option<String>) -> (Sender<WorkerMessage>, Streaming<OrchestratorMessage>) {
+
+        // TODO: handle errors better here
+        let channel = Channel::from_shared(orchestrator_endpoint.to_string()).unwrap().connect().await.unwrap();
+        let mut client = WorkerApiClient::with_interceptor(channel, move |mut req: Request<()>| {
+            if let Some(pass) = &password {
+                let val = pass.parse()
+                    .map_err(|e| Status::invalid_argument(format!("invalid authorization header value: {e}")))?;
+                req.metadata_mut().insert("authorization", val);
+            }
+            Ok(req)
+        });
 
         // Set up channel for streaming
         let (tx, rx) = mpsc::channel(32);

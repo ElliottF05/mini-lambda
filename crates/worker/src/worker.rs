@@ -37,7 +37,7 @@ pub struct Worker {
 
 impl Worker {
     /// Create a new Worker instance.
-    pub async fn new(addr: SocketAddr, orchestrator_endpoint: &str, worker_credits: u32) -> Worker {
+    pub async fn new(addr: SocketAddr, orchestrator_endpoint: &str, password: Option<String>, worker_credits: u32) -> Worker {
 
         // Set up Executor fields
         let wasm_engine = Engine::new(Config::new().epoch_interruption(true))
@@ -58,7 +58,7 @@ impl Worker {
 
 
         // Set up communication with Orchestrator
-        let (orchestrator_tx, inbound) = Worker::connect_to_orchestrator(orchestrator_endpoint).await;
+        let (orchestrator_tx, inbound) = Worker::connect_to_orchestrator(orchestrator_endpoint, password).await;
 
         // Create the Worker instance
         let worker = Worker {

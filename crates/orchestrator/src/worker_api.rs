@@ -128,3 +128,18 @@ impl Orchestrator {
         }
     }
 }
+
+// TODO: add simple docs
+pub fn check_worker_auth(orchestrator: Orchestrator) -> impl Fn(Request<()>) -> Result<Request<()>, Status> + Clone {
+    let password = orchestrator.worker_password.clone();
+    move |req: Request<()>| {
+        if let Some(expected) = &password {
+            let actual = req.metadata().get("authorization")
+                .and_then(|v| v.to_str().ok());
+            if actual != Some(expected) {
+                return Err(Status::unauthenticated("invalid worker password"));
+            }
+        }
+        Ok(req)
+    }
+}

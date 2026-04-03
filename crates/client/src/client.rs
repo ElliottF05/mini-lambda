@@ -4,6 +4,8 @@ use shared::{CancelJobRequest, JobRequest};
 use shared::executor_client::ExecutorClient;
 use shared::{WorkerRequest, client_api_client::ClientApiClient};
 use tokio::sync::watch;
+use tonic::service::Interceptor;
+use tonic::service::interceptor::InterceptedService;
 use tonic::transport::Channel;
 use tonic::{Request, Status};
 use uuid::Uuid;
@@ -14,13 +16,15 @@ use crate::job::{Job, JobError, JobOutput, JobState, RunningJob};
 /// Connects to an Orchestrator which assigns workers to run your wasm jobs.
 #[derive(Clone)]
 pub struct Client {
-    orchestrator_client: ClientApiClient<Channel>,
+    orchestrator_client: ClientApiClient<InterceptedService<Channel, AuthInterceptor>>,
 }
 
 impl Client {
     /// Connect to an Orchestrator at the given endpoint, returning a Client on success.
-    pub async fn connect(orchestrator_endpoint: &str) -> Result<Client, tonic::transport::Error> {
-        let orchestrator_client = ClientApiClient::connect(orchestrator_endpoint.to_string()).await?;
+    pub async fn connect(orchestrator_endpoint: &str, password: Option<String>) -> Result<Client, tonic::transport::Error> {
+        // TODO: handle error better here, maybe make ConnectionError enum
+        let channel = Channel::from_shared(orchestrator_endpoint.to_string()).unwrap().connect().await?;
+        let orchestrator_client = ClientApiClient::with_interceptor(channel, AuthInterceptor { password });
         Ok(Client { orchestrator_client })
     }
 
@@ -124,5 +128,23 @@ impl Client {
             Ok(_) => Ok(()),
             Err(e) => Err(e)
         }
+    }
+}
+
+
+// TODO: simple documentation here and for call method below
+#[derive(Clone)]
+struct AuthInterceptor {
+    password: Option<String>
+}
+
+impl Interceptor for AuthInterceptor {
+    fn call(&mut self, mut request: Request<()>) -> Result<Request<()>, Status> {
+        if let Some(pass) = &self.password {
+            let val = pass.parse()
+                .map_err(|e| Status::invalid_argument(format!("invalid authorization header value: {e}")))?;
+            request.metadata_mut().insert("authorization", val);
+        }
+        Ok(request)
     }
 }

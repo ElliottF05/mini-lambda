@@ -7,6 +7,8 @@ struct Args {
     wasm_path: String,
     #[arg(long, default_value = "http://127.0.0.1:50051")]
     orchestrator: String,
+    #[arg(long)]
+    password: Option<String>,
     #[arg(trailing_var_arg = true)]
     wasm_args: Vec<String>
 }
@@ -19,7 +21,7 @@ pub async fn main() {
         .unwrap_or_else(|e| panic!("wasm file path not found: {}", e))
         .args(args.wasm_args);
 
-    let client = Client::connect(&args.orchestrator).await
+    let client = Client::connect(&args.orchestrator, args.password).await
         .unwrap_or_else(|e| panic!("failed to connect to the client: {}", e));
     let result = client.submit_job(job).wait().await;
     match result {

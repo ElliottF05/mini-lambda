@@ -5,7 +5,7 @@ use shared::client_api_server::ClientApi;
 use shared::{CancelJobRequest, CancelJobResponse, WorkerRequest, WorkerResponse};
 use uuid::Uuid;
 
-use crate::orchestrator::Orchestrator;
+use crate::orchestrator::{self, Orchestrator};
 use crate::errors::OrchestratorError;
 
 /// Implementation of the CliApi service for the Orchestrator.
@@ -59,5 +59,20 @@ impl ClientApi for Orchestrator {
         } else {
             Err(OrchestratorError::JobNotFound.into())
         }
+    }
+}
+
+// TODO: add simple docs
+pub fn check_client_auth(orchestrator: Orchestrator) -> impl Fn(Request<()>) -> Result<Request<()>, Status> + Clone {
+    let password = orchestrator.client_password.clone();
+    move |req: Request<()>| {
+        if let Some(expected) = &password {
+            let actual = req.metadata().get("authorization")
+                .and_then(|v| v.to_str().ok());
+            if actual != Some(expected) {
+                return Err(Status::unauthenticated("invalid client password"));
+            }
+        }
+        Ok(req)
     }
 }

@@ -20,6 +20,8 @@ struct Args {
     worker_credits: u32,
     #[arg(long, default_value = "http://127.0.0.1:50051")]
     orchestrator: String,
+    #[arg(long)]
+    password: Option<String>,
 }
 
 /// Main entry point for the Worker server binary.
@@ -29,6 +31,7 @@ pub async fn main() {
     let orchestrator_endpoint = &args.orchestrator;
     let bind_host = &args.bind_host;
     let worker_credits = args.worker_credits;
+    let password = args.password;
 
     let listener = TcpListener::bind(format!("{}:0", bind_host)).await
         .unwrap_or_else(|e| panic!("Failed to bind to host {}: {}", bind_host, e));
@@ -36,7 +39,7 @@ pub async fn main() {
         .unwrap_or_else(|e| panic!("Failed to fetch port Worker is bound to: {}", e));
 
     // Register this worker with the orchestrator
-    let worker = Worker::new(addr, orchestrator_endpoint, worker_credits).await;
+    let worker = Worker::new(addr, orchestrator_endpoint, password, worker_credits).await;
     
     // Start the executor server
     println!("Worker listening on {}", addr);
