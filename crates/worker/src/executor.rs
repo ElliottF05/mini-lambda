@@ -13,7 +13,7 @@ use wasmtime_wasi::p2::bindings::Command;
 use wasmtime_wasi::p2::pipe::MemoryOutputPipe;
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
-use crate::credit_guard::JobGuard;
+use crate::job_guard::JobGuard;
 use crate::worker::Worker;
 use crate::errors::ExecutorError;
 

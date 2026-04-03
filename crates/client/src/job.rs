@@ -1,12 +1,11 @@
 use std::{ops::Deref, path::Path, time::Duration};
 use std::fmt::Display;
 
-use shared::{JobResponse, WorkerResponse};
 use tokio::{sync::watch, task::AbortHandle};
-use tonic::{Response, Status};
+use tonic::{Code, Status};
 use uuid::Uuid;
 
-use crate::{client::Client, errors::JobError};
+use crate::client::Client;
 
 pub struct Job {
     pub(crate) wasm_bytes: Vec<u8>,
@@ -46,46 +45,57 @@ pub enum JobState {
     Queued,
     Executing { worker_address: String },
     Completed(Result<JobOutput, JobError>),
+    Cancelled,
 }
 
-// TODO: check if this is safely cloneable (i think all inner methods should be fine)
 #[derive(Clone)]
 pub struct RunningJob {
     pub(crate) job_id: Uuid,
-    pub(crate) state: watch::Receiver<JobState>,
+    pub(crate) state_rx: watch::Receiver<JobState>,
+    pub(crate) state_tx: watch::Sender<JobState>,
     pub(crate) abort: AbortHandle,
     pub(crate) client: Client,
 }
 
 impl RunningJob {
     pub async fn wait(mut self) -> Result<JobOutput, JobError> {
-        let state = self.state
-            .wait_for(|s| matches!(s, JobState::Completed(_))).await;
+        let result = self.state_rx
+            .wait_for(|s| matches!(s, JobState::Completed(_) | JobState::Cancelled))
+            .await;
         
-        match state {
-            Ok(job_state) => {
-                match job_state.deref() {
-                    JobState::Completed(result) => result.clone(),
-                    _ => unreachable!("wait_for should guarantee state is Completed when it returns"),
-                }
-            },
-            Err(e) => {
-                Err(JobError::Internal(e.to_string()))
+        match result {
+            Ok(state) => match state.deref() {
+                JobState::Completed(result) => result.clone(),
+                JobState::Cancelled => Err(JobError::Cancelled),
+                _ => unreachable!("wait_for should guarantee state is Completed or Cancelled when it returns"),
             }
+            Err(e) => Err(JobError::Internal(e.to_string())),
         }
     }
 
-    pub async fn cancel(mut self) -> bool {
+    pub async fn cancel(self) {
         self.abort.abort();
-        match self.state.borrow().deref() {
-            JobState::Queued => {
-                self.client.cancel_queued_job(self.job_id).await.is_ok()
+        let cancel_target = match self.state_rx.borrow().deref() {
+            JobState::Queued => Some(None), // cancel at orchestrator
+            JobState::Executing { worker_address } => Some(Some(worker_address.clone())), // cancel at worker
+            _ => None // job already finished or cancelled
+        };
+
+        match cancel_target {
+            Some(None) => {
+                if self.client.cancel_queued_job(self.job_id).await.is_err() {
+                    eprintln!("failed to cancel job with id: {}", self.job_id);
+                }
             },
-            JobState::Executing { worker_address } => {
-                self.client.cancel_running_job(self.job_id, worker_address).await.is_ok()
+            Some(Some(worker_address)) => {
+                if self.client.cancel_running_job(self.job_id, &worker_address).await.is_err() {
+                    eprintln!("failed to cancel job with id: {}", self.job_id);
+                }
             },
-            JobState::Completed(_) => true
-        }
+            None => {}
+        };
+        
+        self.state_tx.send(JobState::Cancelled).ok();
     }
 }
 
@@ -102,5 +112,32 @@ impl Display for JobOutput {
             write!(f, "\nstderr:\n{}", String::from_utf8_lossy(&self.stderr))?;
         }
         Ok(())
+    }
+}
+
+/// Enum for all recoverable errors that can occur in the Executor.
+#[derive(Debug, thiserror::Error, Clone)]
+pub enum JobError {
+    #[error("the submitted wasm contained an error when compiled or when run: {0}")]
+    WasmError(String), // bad wasm input from user
+
+    #[error("internal error: {0}")]
+    Internal(String), // unexpected internal system error
+
+    #[error("job timed out")]
+    TimedOut, // exceeded user-configured timeout
+
+    #[error("job cancelled by user")]
+    Cancelled, // job explicitly cancelled by user
+}
+
+impl From<Status> for JobError {
+    fn from(status: Status) -> Self {
+        let message = status.message().to_string();
+        match status.code() {
+            Code::InvalidArgument => JobError::WasmError(message),
+            Code::Cancelled => JobError::Cancelled,
+            _ => JobError::Internal(format!("code: {}, message: {}", status.code(), message))
+        }
     }
 }

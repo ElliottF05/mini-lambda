@@ -19,7 +19,8 @@ pub async fn main() {
         .unwrap_or_else(|e| panic!("wasm file path not found: {}", e))
         .args(args.wasm_args);
 
-    let mut client = Client::connect(&args.orchestrator).await;
+    let client = Client::connect(&args.orchestrator).await
+        .unwrap_or_else(|e| panic!("failed to connect to the client: {}", e));
     let result = client.submit_job(job).wait().await;
     match result {
         Ok(output) => {

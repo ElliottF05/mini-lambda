@@ -1,4 +1,4 @@
-use std::future;
+use std::time::Duration;
 
 use client::{Client, Job};
 use tokio::task::JoinSet;
@@ -10,12 +10,14 @@ async fn main() {
     let wasm_bytes = std::fs::read(wasm_path)
         .unwrap_or_else(|e| panic!("wasm path not found: {}", e));
 
-    let mut client = Client::connect("http://127.0.0.1:50051").await;
+    let client = Client::connect("http://127.0.0.1:50051").await
+        .unwrap_or_else(|e| panic!("failed to connect to the client: {}", e));
 
     let mut handles = vec![];
     for _ in 0..50 {
         let job = Job::from_bytes(wasm_bytes.clone())
-            .arg(30.to_string());
+            .arg(30.to_string())
+            .timeout(Duration::from_secs(3));
         handles.push(client.submit_job(job));
     }
 
