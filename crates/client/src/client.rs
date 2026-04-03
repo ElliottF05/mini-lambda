@@ -10,17 +10,22 @@ use uuid::Uuid;
 
 use crate::job::{Job, JobError, JobOutput, JobState, RunningJob};
 
+/// The main entry point for submitting jobs to the distributed compute platform.
+/// Connects to an Orchestrator which assigns workers to run your wasm jobs.
 #[derive(Clone)]
 pub struct Client {
     orchestrator_client: ClientApiClient<Channel>,
 }
 
 impl Client {
+    /// Connect to an Orchestrator at the given endpoint, returning a Client on success.
     pub async fn connect(orchestrator_endpoint: &str) -> Result<Client, tonic::transport::Error> {
         let orchestrator_client = ClientApiClient::connect(orchestrator_endpoint.to_string()).await?;
         Ok(Client { orchestrator_client })
     }
 
+    /// Submit a job for execution and return a RunningJob handle immediately.
+    /// The job is queued until a worker becomes available, then executed automatically.
     pub fn submit_job(&self, job: Job) -> RunningJob {
         let (state_tx, state_rx) = watch::channel(JobState::Queued);
         let job_id = Uuid::new_v4();
@@ -68,12 +73,7 @@ impl Client {
                         state_tx2.send(JobState::Completed(Ok(job_output))).ok();
                     },
                     Err(e) => {
-                        let message = e.message().to_string();
-                        let job_error = match e.code() {
-                            Code::InvalidArgument => JobError::WasmError(message),
-                            code => JobError::Internal(format!("error code: {}, message: {}", code, message))
-                        };
-                        state_tx2.send(JobState::Completed(Err(job_error))).ok();
+                        state_tx2.send(JobState::Completed(Err(JobError::from(e)))).ok();
                     }
                 }
             };
@@ -98,7 +98,8 @@ impl Client {
         }
     }
 
-    pub async fn cancel_queued_job(&self, job_id: Uuid) -> Result<(), Status> {
+    /// Send a cancellation request to the Orchestrator to remove a queued job.
+    pub(crate) async fn cancel_queued_job(&self, job_id: Uuid) -> Result<(), Status> {
         let cancellation_result = self.orchestrator_client.clone()
             .cancel_job(CancelJobRequest { 
                 job_id: job_id.as_bytes().to_vec()
@@ -109,10 +110,11 @@ impl Client {
         }
     }
 
-    pub async fn cancel_running_job(&self, job_id: Uuid, worker_address: &str) -> Result<(), Status> {
+    /// Send a cancellation request to the worker currently executing a job.
+    pub(crate) async fn cancel_running_job(&self, job_id: Uuid, worker_address: &str) -> Result<(), Status> {
         let worker_endpoint = format!("http://{}", worker_address);
         let mut executor_client = ExecutorClient::connect(worker_endpoint).await
-            .unwrap_or_else(|e| panic!("Failed to connect to the provided Worker: {}", e));
+            .map_err(|e| Status::unavailable(e.to_string()))?;
         
         let cancellation_result = executor_client.cancel_job(CancelJobRequest {
             job_id: job_id.as_bytes().to_vec()
