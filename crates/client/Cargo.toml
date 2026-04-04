@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 shared = { path = "../shared" }
 tonic = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true }
 clap = { workspace = true }
 uuid = { workspace = true }
 thiserror = { workspace = true }

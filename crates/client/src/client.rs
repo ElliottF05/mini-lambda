@@ -44,26 +44,36 @@ impl Client {
                 let worker_request = WorkerRequest { job_id: job_id.clone() };
 
                 let response = match client.orchestrator_client.request_worker(Request::new(worker_request)).await {
-                    Ok(r) => r,
+                    Ok(r) => r.into_inner(),
                     Err(e) => {
                         state_tx2.send(JobState::Completed(Err(JobError::Internal(e.to_string())))).ok();
                         return;
                     }
                 };
 
-                let worker_address = response.into_inner().worker_address; 
+                let worker_address = response.worker_address; 
                 let worker_endpoint = "http://".to_string() + &worker_address;
+                let jwt_token = response.jwt_token;
                 if state_tx2.send(JobState::Executing { worker_address }).is_err() {
                     return; // no listening RunningJob's, so no point running the task
                 };
 
-                let mut executor_client = match ExecutorClient::connect(worker_endpoint).await {
-                    Ok(c) => c,
-                    Err(e) => {
-                        state_tx2.send(JobState::Completed(Err(JobError::Internal(e.to_string())))).ok();
-                        return;
-                    }
-                };
+                // let mut executor_client = match ExecutorClient::connect(worker_endpoint).await {
+                //     Ok(c) => c,
+                //     Err(e) => {
+                //         state_tx2.send(JobState::Completed(Err(JobError::Internal(e.to_string())))).ok();
+                //         return;
+                //     }
+                // };
+                
+                // TODO: handle errors here (look at commented out section)
+                let channel = Channel::from_shared(worker_endpoint).unwrap().connect().await.unwrap();
+                let mut executor_client = ExecutorClient::with_interceptor(channel, move |mut req: Request<()>| {
+                    // TODO: handle this error
+                    let val = jwt_token.parse().unwrap();
+                    req.metadata_mut().insert("authorization", val);
+                    Ok(req)
+                });
 
                 let job_request = JobRequest { job_id, wasm_bytes: job.wasm_bytes, args: job.args };
 

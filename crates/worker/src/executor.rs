@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
+use jsonwebtoken::{DecodingKey, Validation};
 use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
+use tonic::metadata::MetadataMap;
 use tonic::{Request, Status, Response};
 use uuid::Uuid;
 
 use shared::executor_server::Executor;
-use shared::{CancelJobRequest, CancelJobResponse, JobRequest, JobResponse};
+use shared::{CancelJobRequest, CancelJobResponse, JobClaims, JobRequest, JobResponse};
 
 use wasmtime::Store;
 use wasmtime::component::{Component, ResourceTable};
@@ -55,12 +57,15 @@ impl Executor for Worker {
         println!("Received job to execute...");
 
         // Extract request info
-        let request = request.into_inner();
+        let (metadata, _extensions, request) = request.into_parts();
         let job_id = Uuid::from_slice(&request.job_id)
             .map_err(|_| ExecutorError::MalformedJobId)?;
         let wasm_bytes = request.wasm_bytes;
         let mut wasi_args = vec![job_id.to_string()];
         wasi_args.extend(request.args);
+
+        // Check authentication
+        self.check_client_auth(&metadata, job_id)?;
 
 
         // RAII credit guard to send credit update back to Orchestrator when dropped
@@ -142,8 +147,12 @@ impl Executor for Worker {
         &self,
         request: Request<CancelJobRequest>
     ) -> Result<Response<CancelJobResponse>, Status> {
-        let job_id = Uuid::from_slice(&request.into_inner().job_id)
+        let (metadata, _extensions, request) = request.into_parts();
+        let job_id = Uuid::from_slice(&request.job_id)
             .map_err(|_| ExecutorError::JobNotFound)?;
+
+        // Check authentication
+        self.check_client_auth(&metadata, job_id)?;
         
         // Cancel the job via the cancellation token
         match self.cancellation_tokens.get(&job_id) {
@@ -155,6 +164,32 @@ impl Executor for Worker {
             None => {
                 Err(ExecutorError::JobNotFound.into())
             }
+        }
+    }
+}
+
+impl Worker {
+    /// Verifies the JWT token in the request metadata matches the given job_id.
+    /// Returns Unauthenticated if the token is missing, invalid, or bound to a different job.
+    fn check_client_auth(&self, metadata: &MetadataMap, job_id: Uuid) -> Result<(), ExecutorError> {
+        let jwt_token = metadata.get("authorization")
+            .ok_or(ExecutorError::Unauthenticated)?;
+
+        let secret = self.jwt_secret.get()
+            .ok_or(ExecutorError::NotReady("worker has not received jwt secret yet".to_string()))?;
+
+        let token_data = jsonwebtoken::decode(
+            jwt_token, 
+            &DecodingKey::from_secret(secret), 
+            &Validation::default()
+        ).map_err(|_| ExecutorError::Unauthenticated)?;
+
+        let job_claims: JobClaims = token_data.claims;
+
+        if job_claims.sub != job_id {
+            Err(ExecutorError::Unauthenticated)
+        } else {
+            Ok(())
         }
     }
 }

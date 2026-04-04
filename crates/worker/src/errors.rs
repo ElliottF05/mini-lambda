@@ -20,8 +20,14 @@ pub enum ExecutorError {
     #[error("job cancelled by client")]
     JobCancelled,
 
-    #[error("unknown error: {0}")]
-    Unknown(String),
+    #[error("received unathenticated jwt token")]
+    Unauthenticated,
+
+    #[error("worker was accessed before it was ready: {0}")]
+    NotReady(String),
+
+    #[error("an unknown error occurred: {0}")]
+    Unknown(String)
 }
 
 impl From<ExecutorError> for tonic::Status {
@@ -33,6 +39,8 @@ impl From<ExecutorError> for tonic::Status {
             ExecutorError::MalformedJobId => tonic::Status::internal(e.to_string()),
             ExecutorError::JobNotFound => tonic::Status::not_found(e.to_string()),
             ExecutorError::JobCancelled => tonic::Status::cancelled(e.to_string()),
+            ExecutorError::Unauthenticated => tonic::Status::unauthenticated(e.to_string()),
+            ExecutorError::NotReady(_) => tonic::Status::internal(e.to_string()),
             ExecutorError::Unknown(_) => tonic::Status::unknown(e.to_string()),
         }
     }

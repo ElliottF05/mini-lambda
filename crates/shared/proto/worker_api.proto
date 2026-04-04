@@ -39,4 +39,6 @@ message OrchestratorMessage {
 }
 
 // Registration acknowledgment message sent by the Orchestrator.
-message RegistrationAck {}
+message RegistrationAck {
+    bytes jwt_secret = 1;
+}

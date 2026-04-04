@@ -6,10 +6,12 @@ edition.workspace = true
 [dependencies]
 shared = { path = "../shared" }
 tonic = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true }
 tokio-stream = { workspace = true, features = []}
 priority-queue = { version = "2.7.0" }
 hashlink = { version = "0.11.0"}
 clap = { workspace = true }
 uuid = { workspace = true }
 thiserror = { workspace = true }
+rand = {workspace = true }
+jsonwebtoken = { workspace = true }

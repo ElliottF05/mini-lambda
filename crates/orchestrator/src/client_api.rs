@@ -5,7 +5,7 @@ use shared::client_api_server::ClientApi;
 use shared::{CancelJobRequest, CancelJobResponse, WorkerRequest, WorkerResponse};
 use uuid::Uuid;
 
-use crate::orchestrator::{self, Orchestrator};
+use crate::orchestrator::Orchestrator;
 use crate::errors::OrchestratorError;
 
 /// Implementation of the CliApi service for the Orchestrator.
@@ -30,7 +30,7 @@ impl ClientApi for Orchestrator {
             let mut registry = self.registry.lock().await;
 
             queue.enqueue(job_id, tx);
-            Self::dispatch_pending_jobs(&mut queue, &mut registry);
+            Self::dispatch_pending_jobs(&mut queue, &mut registry, &self.jwt_secret);
         }
 
         // Awake when this job is dispatched
@@ -62,7 +62,8 @@ impl ClientApi for Orchestrator {
     }
 }
 
-// TODO: add simple docs
+/// Interceptor that verifies the authorization header matches the configured client password.
+/// Returns Unauthenticated if the password is wrong or missing. No-op if no password is configured.
 pub fn check_client_auth(orchestrator: Orchestrator) -> impl Fn(Request<()>) -> Result<Request<()>, Status> + Clone {
     let password = orchestrator.client_password.clone();
     move |req: Request<()>| {

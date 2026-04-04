@@ -1,9 +1,10 @@
+use jsonwebtoken::{EncodingKey, Header};
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Status, Response, Streaming};
 
-use shared::{CreditUpdate, OrchestratorMessage, RegistrationAck, WorkerMessage, WorkerResponse, orchestrator_message, worker_message};
+use shared::{CreditUpdate, JobClaims, OrchestratorMessage, RegistrationAck, WorkerMessage, WorkerResponse, orchestrator_message, worker_message};
 use shared::worker_api_server::WorkerApi;
 
 use crate::job_queue::JobQueue;
@@ -86,13 +87,13 @@ impl Orchestrator {
             let mut registry = self.registry.lock().await;
 
             registry.register_worker(registration.address.to_owned(), registration.credits);
-            Self::dispatch_pending_jobs(&mut queue, &mut registry);
+            Self::dispatch_pending_jobs(&mut queue, &mut registry, &self.jwt_secret);
         }
 
         // Send registration ack back to worker
         let ack = OrchestratorMessage {
             message: Some(orchestrator_message::Message::RegistrationAck(
-                RegistrationAck {}
+                RegistrationAck { jwt_secret: self.jwt_secret.to_vec() }
             ))
         };
         if tx.send(Ok(ack)).await.is_err() {
@@ -109,19 +110,24 @@ impl Orchestrator {
         let mut registry = self.registry.lock().await;
 
         registry.update_credits(worker_address, credit_update.delta);
-        Self::dispatch_pending_jobs(&mut queue, &mut registry);
+        Self::dispatch_pending_jobs(&mut queue, &mut registry, &self.jwt_secret);
     }
 
     /// Dispatches as many pending jobs as possible to available workers, consuming one registry
     /// credit per job. Stops when the queue is empty or no credits remain.
     /// The caller must hold write guards on both the queue and registry for the duration.
-    pub fn dispatch_pending_jobs(queue: &mut JobQueue, registry: &mut WorkerRegistry) {
+    pub fn dispatch_pending_jobs(queue: &mut JobQueue, registry: &mut WorkerRegistry, jwt_secret: &[u8]) {
         while registry.has_available_credits() {
             match queue.dequeue() {
-                Some((_job_id, tx)) => {
+                Some((job_id, tx)) => {
                     let worker_address = registry.get_worker()
                         .expect("registry credit availability checked by has_available_credits()");
-                    tx.send(WorkerResponse { worker_address }).ok();
+                    let header = Header::default();
+                    let job_claims = JobClaims::new(job_id);
+                    let key = EncodingKey::from_secret(jwt_secret);
+                    let jwt_token = jsonwebtoken::encode(&header, &job_claims, &key)
+                        .unwrap_or_else(|e| panic!("jwt encoding failed, this should not happen: {e}"));
+                    tx.send(WorkerResponse { worker_address, jwt_token }).ok();
                 },
                 None => break
             }
@@ -129,7 +135,8 @@ impl Orchestrator {
     }
 }
 
-// TODO: add simple docs
+/// Interceptor that verifies the authorization header matches the configured worker password.
+/// Returns Unauthenticated if the password is wrong or missing. No-op if no password is configured.
 pub fn check_worker_auth(orchestrator: Orchestrator) -> impl Fn(Request<()>) -> Result<Request<()>, Status> + Clone {
     let password = orchestrator.worker_password.clone();
     move |req: Request<()>| {

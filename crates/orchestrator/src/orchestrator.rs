@@ -14,6 +14,7 @@ pub struct Orchestrator {
     pub job_queue: Arc<Mutex<JobQueue>>,
     pub worker_password: Option<String>,
     pub client_password: Option<String>,
+    pub jwt_secret: [u8; 32],
 }
 
 impl Orchestrator {
@@ -23,7 +24,8 @@ impl Orchestrator {
             registry: Arc::new(Mutex::new(WorkerRegistry::new())),
             job_queue: Arc::new(Mutex::new(JobQueue::new())),
             worker_password,
-            client_password
+            client_password,
+            jwt_secret: rand::random(),
         }
     }
 }

@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 shared = { path = "../shared" }
 tonic = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 thiserror = { workspace = true }
@@ -17,3 +17,4 @@ wasmtime-wasi = { version = "43.0.0" }
 dashmap = { version = "6.1.0" }
 blake3 = {version = "1.8.4" }
 lru = { version = "0.16.3" }
+jsonwebtoken = { workspace = true }
