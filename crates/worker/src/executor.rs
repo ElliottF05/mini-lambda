@@ -71,75 +71,83 @@ impl Executor for Worker {
         // and removes cancellation token
         let cancellation_token = CancellationToken::new();
         self.cancellation_tokens.insert(job_id, cancellation_token.clone());
-        let _job_guard = JobGuard::new(
-            self.orchestrator_tx.clone(), 
-            self.cancellation_tokens.clone(),
-            job_id
-        );
 
-        let wasm_hash = blake3::hash(&wasm_bytes);
+        let worker = self.clone();
+        let execute_task = tokio::spawn(async move {
+            let _job_guard = JobGuard::new(
+                worker.orchestrator_tx.clone(), 
+                worker.cancellation_tokens.clone(),
+                job_id
+            );
 
-        let cell = self.component_cache.lock().await
-            .get_or_insert(wasm_hash, || Arc::new(OnceCell::new()))
-            .clone();
+            let wasm_hash = blake3::hash(&wasm_bytes);
 
-        let component = cell.get_or_try_init(|| async {
-            let engine = self.wasm_engine.clone();
-            tokio::task::spawn_blocking(move || {
-                Component::from_binary(&engine, &wasm_bytes)
-                    .map_err(ExecutorError::CompilationFailed)
+            let cell = worker.component_cache.lock().await
+                .get_or_insert(wasm_hash, || Arc::new(OnceCell::new()))
+                .clone();
+
+            let component = cell.get_or_try_init(|| async {
+                let engine = worker.wasm_engine.clone();
+                tokio::task::spawn_blocking(move || {
+                    Component::from_binary(&engine, &wasm_bytes)
+                        .map_err(ExecutorError::CompilationFailed)
+                })
+                .await
+                .unwrap_or_else(|e| panic!("compilation task panicked: {e}"))
             })
-            .await
-            .unwrap_or_else(|e| panic!("compilation task panicked: {e}"))
-        })
-        .await?;
+            .await?;
 
-        let stdout_pipe = MemoryOutputPipe::new(10 * 1024 * 1024); // 10 MB
-        let stderr_pipe = MemoryOutputPipe::new(10 * 1024 * 1024); // 10 MB
+            let stdout_pipe = MemoryOutputPipe::new(10 * 1024 * 1024); // 10 MB
+            let stderr_pipe = MemoryOutputPipe::new(10 * 1024 * 1024); // 10 MB
 
-        let wasi_ctx = WasiCtx::builder()
-            .args(&wasi_args)
-            .stdout(stdout_pipe.clone())
-            .stderr(stderr_pipe.clone())
-            .build();
+            let wasi_ctx = WasiCtx::builder()
+                .args(&wasi_args)
+                .stdout(stdout_pipe.clone())
+                .stderr(stderr_pipe.clone())
+                .build();
 
-        // TODO: add env and file system
-        let state = ComponentRunStates::new(wasi_ctx);
-        let mut store = Store::new(&self.wasm_engine, state);
+            // TODO: add env and file system
+            let state = ComponentRunStates::new(wasi_ctx);
+            let mut store = Store::new(&worker.wasm_engine, state);
 
-        store.epoch_deadline_async_yield_and_update(1);
-        store.set_epoch_deadline(1);
+            store.epoch_deadline_async_yield_and_update(1);
+            store.set_epoch_deadline(1);
 
-        let command = Command::instantiate_async(&mut store, component, &self.wasm_linker).await
-            .map_err(ExecutorError::InstantiationFailed)?;
+            let command = Command::instantiate_async(&mut store, component, &worker.wasm_linker).await
+                .map_err(ExecutorError::InstantiationFailed)?;
 
-        let run_result = tokio::select! {
-            result = command.wasi_cli_run().call_run(&mut store) => result,
-            _ = cancellation_token.cancelled() => {
-                println!("Job cancelled");
-                return Err(ExecutorError::JobCancelled.into())
-            }
-        };
+            println!("here");
 
-        println!("Job executed");
+            let run_result = tokio::select! {
+                result = command.wasi_cli_run().call_run(&mut store) => result,
+                _ = cancellation_token.cancelled() => {
+                    println!("Job cancelled");
+                    return Err(ExecutorError::JobCancelled.into())
+                }
+            };
 
-        let stdout = stdout_pipe.contents().to_vec();
-        let stderr = stderr_pipe.contents().to_vec();
+            println!("Job executed");
 
-        match run_result {
-            Ok(Ok(())) => Ok(Response::new(JobResponse { stdout, stderr })),
-            Ok(Err(())) => Err(ExecutorError::ExecutionFailed(format!("stderr: {}", String::from_utf8_lossy(&stderr))).into()),
-            Err(e) => {
-                if let Some(exit) = e.downcast_ref::<wasmtime_wasi::I32Exit>() {
-                    match exit.0 {
-                        0 => Ok(Response::new(JobResponse { stdout, stderr })),
-                        code => Err(ExecutorError::ExecutionFailed(format!("exited with code {code}, stderr: {}: {}", code, String::from_utf8_lossy(&stderr))).into()),
+            let stdout = stdout_pipe.contents().to_vec();
+            let stderr = stderr_pipe.contents().to_vec();
+
+            match run_result {
+                Ok(Ok(())) => Ok(Response::new(JobResponse { stdout, stderr })),
+                Ok(Err(())) => Err(ExecutorError::ExecutionFailed(format!("stderr: {}", String::from_utf8_lossy(&stderr))).into()),
+                Err(e) => {
+                    if let Some(exit) = e.downcast_ref::<wasmtime_wasi::I32Exit>() {
+                        match exit.0 {
+                            0 => Ok(Response::new(JobResponse { stdout, stderr })),
+                            code => Err(ExecutorError::ExecutionFailed(format!("exited with code {code}, stderr: {}: {}", code, String::from_utf8_lossy(&stderr))).into()),
+                        }
+                    } else {
+                        Err(ExecutorError::Unknown(e.to_string()).into())
                     }
-                } else {
-                    Err(ExecutorError::Unknown(e.to_string()).into())
                 }
             }
-        }
+        });
+
+        execute_task.await.unwrap_or_else(|e| Err(ExecutorError::ExecutionTaskFailed(e.to_string()).into()))
     }
 
     /// A function exposed by the Worker for the Client to call
@@ -161,11 +169,13 @@ impl Executor for Worker {
         // Cancel the job via the cancellation token
         match self.cancellation_tokens.get(&job_id) {
             Some(cancellation_token) => {
+                println!("Cancelled token");
                 cancellation_token.cancel();
                 self.wasm_engine.increment_epoch(); // increment the epoch immediately so control is yielded back
                 Ok(Response::new(CancelJobResponse {}))
             },
             None => {
+                println!("ERROR: No cancellation token found");
                 Err(ExecutorError::JobNotFound.into())
             }
         }

@@ -135,6 +135,7 @@ impl Client {
 
     /// Send a cancellation request to the Orchestrator to remove a queued job.
     pub(crate) async fn cancel_queued_job(&self, job_id: Uuid) -> Result<(), Status> {
+        println!("Cancelling queued job");
         let cancellation_result = self.orchestrator_client.clone()
             .cancel_job(CancelJobRequest { 
                 job_id: job_id.as_bytes().to_vec()
@@ -147,6 +148,7 @@ impl Client {
 
     /// Send a cancellation request to the worker currently executing a job.
     pub(crate) async fn cancel_running_job(&self, job_id: Uuid, mut executor_client: ExecutorClient<InterceptedService<Channel, WorkerJwtInterceptor>>) -> Result<(), Status> {
+        println!("Cancelling running job");
         let cancellation_result = executor_client.cancel_job(CancelJobRequest {
             job_id: job_id.as_bytes().to_vec()
         }).await;

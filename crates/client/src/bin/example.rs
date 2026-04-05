@@ -15,10 +15,10 @@ async fn main() {
         .unwrap_or_else(|e| panic!("failed to connect to the client: {}", e));
 
     let mut handles = vec![];
-    for _ in 0..1 {
+    for _ in 0..3 {
         let job = Job::from_bytes(wasm_bytes.clone())
-            .arg(45.to_string())
-            .timeout(Duration::from_secs(3));
+            .arg(50.to_string())
+            .timeout(Duration::from_secs(1));
         handles.push(client.submit_job(job));
     }
 

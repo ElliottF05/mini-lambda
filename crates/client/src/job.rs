@@ -1,12 +1,9 @@
 use std::{ops::Deref, path::Path, time::Duration};
 use std::fmt::Display;
 
-use tokio::{sync::watch, task::AbortHandle};
+use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tonic::{Code, Status};
-use uuid::Uuid;
-
-use crate::client::Client;
 
 /// A wasm job to be submitted for remote execution.
 /// Construct with from_bytes or from_path, then configure using the builder methods.

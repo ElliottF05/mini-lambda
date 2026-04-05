@@ -29,6 +29,7 @@ impl Drop for JobGuard {
     /// Sends a credit update to the Orchestrator, returning one credit.
     /// Also drops Worker resources associated with this job
     fn drop(&mut self) {
+        println!("Dropped");
         self.cancellation_tokens.remove(&self.job_id);
         let tx= self.tx.clone();
         tokio::spawn(async move {
