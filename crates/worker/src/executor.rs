@@ -188,7 +188,7 @@ impl Worker {
     fn check_client_auth(&self, metadata: &MetadataMap, job_id: Uuid) -> Result<(), ExecutorError> {
         let jwt_token = metadata.get("authorization")
             .ok_or(ExecutorError::Unauthenticated)?;
-        
+
         let secret = self.jwt_secret.get()
             .unwrap_or_else(|| {
                 eprintln!("ERROR: worker should always have received jwt secret before running a job, this should never happen");
@@ -206,7 +206,6 @@ impl Worker {
         if job_claims.sub != job_id {
             Err(ExecutorError::Unauthenticated)
         } else {
-            println!("auth passed");
             Ok(())
         }
     }
