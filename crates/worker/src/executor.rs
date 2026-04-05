@@ -190,8 +190,11 @@ impl Worker {
         let jwt_token = metadata.get("authorization")
             .ok_or(ExecutorError::Unauthenticated)?;
 
+        // TODO: check if i can panic in here, since its an interceptor.
+        // this is a program invariant, so i want to crash loudly instead
+        // of return some status code or error
         let secret = self.jwt_secret.get()
-            .ok_or(ExecutorError::NotReady("worker has not received jwt secret yet".to_string()))?;
+            .expect("worker should always have received jwt secret before running a job");
 
         let token_data = jsonwebtoken::decode(
             jwt_token, 

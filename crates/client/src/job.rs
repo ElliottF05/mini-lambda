@@ -77,7 +77,9 @@ impl RunningJob {
                 JobState::Cancelled => Err(JobError::Cancelled),
                 _ => unreachable!("wait_for should guarantee state is Completed or Cancelled when it returns"),
             }
-            Err(e) => Err(JobError::Internal(e.to_string())),
+            Err(e) => Err(JobError::Internal(
+                format!("job state tx channel was dropped before sending a completion or cancellation message, this should never occur: {}", e)
+            )),
         }
     }
 
@@ -115,10 +117,6 @@ pub enum JobError {
     /// An unexpected system error occurred, not caused by user input.
     #[error("internal error: {0}")]
     Internal(String), // unexpected internal system error
-
-    /// The job exceeded its configured timeout duration.
-    #[error("job timed out")]
-    TimedOut, // exceeded user-configured timeout
 
     /// The job was explicitly cancelled by the caller.
     #[error("job cancelled by user")]

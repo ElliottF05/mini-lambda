@@ -127,6 +127,8 @@ impl Orchestrator {
                     let key = EncodingKey::from_secret(jwt_secret);
                     let jwt_token = jsonwebtoken::encode(&header, &job_claims, &key)
                         .unwrap_or_else(|e| panic!("jwt encoding failed, this should not happen: {e}"));
+
+                    // TODO: revise credit update system, see ROADMAP.md 
                     tx.send(WorkerResponse { worker_address, jwt_token }).ok();
                 },
                 None => break

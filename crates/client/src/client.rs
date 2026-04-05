@@ -13,6 +13,10 @@ use uuid::Uuid;
 
 use crate::job::{Job, JobError, JobOutput, JobState, RunningJob};
 
+// Note for error handling in this crate. Since this is meant to be a library, avoid panics
+// and exiting the process. Instead, return internal error status codes with descriptive messages,
+// indicating if a program invariant was violated.
+
 /// The main entry point for submitting jobs to the distributed compute platform.
 /// Connects to an Orchestrator which assigns workers to run your wasm jobs.
 #[derive(Clone)]
@@ -58,7 +62,7 @@ impl Client {
                         }
                     },
                     _ = cancel_token.cancelled() => {
-                        client.cancel_queued_job(job_id).await.ok();
+                        client.cancel_queued_job(job_id).await;
                         state_tx.send(JobState::Cancelled).ok();
                         return;
                     }
@@ -82,7 +86,9 @@ impl Client {
                         }
                     },
                     Err(e) => {
-                        state_tx.send(JobState::Completed(Err(JobError::Internal(e.to_string())))).ok();
+                        state_tx.send(JobState::Completed(Err(JobError::Internal(
+                            format!("received a malformed worker endpoint from the orchestrator, this should never occur: {}", e)
+                        )))).ok();
                         return;
                     }
                 };
@@ -97,7 +103,8 @@ impl Client {
                 let execution_result = tokio::select! {
                     r = executor_client.execute_job(job_request) => r,
                     _ = cancel_token.cancelled() => {
-                        client.cancel_running_job(job_id, executor_client).await.ok();
+                        client.cancel_running_job(job_id, executor_client).await;
+                        state_tx.send(JobState::Cancelled).ok();
                         return;
                     }
                 };
@@ -121,42 +128,34 @@ impl Client {
                 _ = tokio::time::sleep(timeout) => {
                     cancel_token_timeout.cancel();
                     submit_task.await.ok(); // wait for submit_task cleanup
-                    state_tx_timeout.send(JobState::Completed(Err(JobError::TimedOut))).ok();
+                    state_tx_timeout.send(JobState::Cancelled).ok();
                 }
             };
         });
-
 
         return RunningJob {
             state_rx,
             cancel_token: cancel_token_handle,
         }
     }
-
+    
+    // TODO: maybe add debug logs (so they only show up if tracing level is very high)
+    // if cancel_request return an error? Note that this doesn't mean something went wrong,
+    // it's just the result of a network race. The job will be cancelled on the client side
+    // by the cancellation token
     /// Send a cancellation request to the Orchestrator to remove a queued job.
-    pub(crate) async fn cancel_queued_job(&self, job_id: Uuid) -> Result<(), Status> {
-        println!("Cancelling queued job");
-        let cancellation_result = self.orchestrator_client.clone()
+    pub(crate) async fn cancel_queued_job(&self, job_id: Uuid) {
+        self.orchestrator_client.clone()
             .cancel_job(CancelJobRequest { 
                 job_id: job_id.as_bytes().to_vec()
-            }).await;
-        match cancellation_result {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e)
-        }
+            }).await.ok();
     }
 
     /// Send a cancellation request to the worker currently executing a job.
-    pub(crate) async fn cancel_running_job(&self, job_id: Uuid, mut executor_client: ExecutorClient<InterceptedService<Channel, WorkerJwtInterceptor>>) -> Result<(), Status> {
-        println!("Cancelling running job");
-        let cancellation_result = executor_client.cancel_job(CancelJobRequest {
+    pub(crate) async fn cancel_running_job(&self, job_id: Uuid, mut executor_client: ExecutorClient<InterceptedService<Channel, WorkerJwtInterceptor>>) {
+        executor_client.cancel_job(CancelJobRequest {
             job_id: job_id.as_bytes().to_vec()
-        }).await;
-
-        match cancellation_result {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e)
-        }
+        }).await.ok();
     }
 }
 
@@ -173,7 +172,7 @@ impl Interceptor for OrchestratorAuthInterceptor {
     fn call(&mut self, mut request: Request<()>) -> Result<Request<()>, Status> {
         if let Some(pass) = &self.password {
             let val = pass.parse()
-                .map_err(|e| Status::invalid_argument(format!("invalid authorization header value: {e}")))?;
+                .map_err(|e| Status::invalid_argument(format!("password could not be parsed: {e}")))?;
             request.metadata_mut().insert("authorization", val);
         }
         Ok(request)
@@ -189,7 +188,7 @@ pub(crate) struct WorkerJwtInterceptor {
 impl Interceptor for WorkerJwtInterceptor {
     fn call(&mut self, mut request: Request<()>) -> Result<Request<()>, Status> {
         let val = self.jwt_token.parse()
-            .unwrap_or_else(|e| panic!("orchestrator returned a malformed jwt token: {e}"));
+            .map_err(|e| Status::internal(format!("the orchestrator returned a jwt token that couldn't be parsed, this should never occur: {}", e)))?;
         request.metadata_mut().insert("authorization", val);
         Ok(request)
     }
