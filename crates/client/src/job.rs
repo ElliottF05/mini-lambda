@@ -2,6 +2,7 @@ use std::{ops::Deref, path::Path, time::Duration};
 use std::fmt::Display;
 
 use tokio::{sync::watch, task::AbortHandle};
+use tokio_util::sync::CancellationToken;
 use tonic::{Code, Status};
 use uuid::Uuid;
 
@@ -52,7 +53,7 @@ impl Job {
 
 pub enum JobState {
     Queued,
-    Executing { worker_address: String },
+    Executing,
     Completed(Result<JobOutput, JobError>),
     Cancelled,
 }
@@ -61,11 +62,8 @@ pub enum JobState {
 /// Use wait to block until the job finishes, or cancel to stop it early.
 #[derive(Clone)]
 pub struct RunningJob {
-    pub(crate) job_id: Uuid,
     pub(crate) state_rx: watch::Receiver<JobState>,
-    pub(crate) state_tx: watch::Sender<JobState>,
-    pub(crate) abort: AbortHandle,
-    pub(crate) client: Client,
+    pub(crate) cancel_token: CancellationToken,
 }
 
 impl RunningJob {
@@ -89,28 +87,7 @@ impl RunningJob {
     /// Cancel the job, stopping it at whichever stage it is currently in.
     /// If queued, removes it from the orchestrator. If running, stops execution on the worker.
     pub async fn cancel(self) {
-        self.abort.abort();
-        let cancel_target = match self.state_rx.borrow().deref() {
-            JobState::Queued => Some(None), // cancel at orchestrator
-            JobState::Executing { worker_address } => Some(Some(worker_address.clone())), // cancel at worker
-            _ => None // job already finished or cancelled
-        };
-
-        match cancel_target {
-            Some(None) => {
-                if self.client.cancel_queued_job(self.job_id).await.is_err() {
-                    eprintln!("failed to cancel job with id: {}", self.job_id);
-                }
-            },
-            Some(Some(worker_address)) => {
-                if self.client.cancel_running_job(self.job_id, &worker_address).await.is_err() {
-                    eprintln!("failed to cancel job with id: {}", self.job_id);
-                }
-            },
-            None => {}
-        };
-
-        self.state_tx.send(JobState::Cancelled).ok();
+        self.cancel_token.cancel();
     }
 }
 

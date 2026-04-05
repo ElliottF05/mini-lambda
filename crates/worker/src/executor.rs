@@ -67,12 +67,11 @@ impl Executor for Worker {
         // Check authentication
         self.check_client_auth(&metadata, job_id)?;
 
-
         // RAII credit guard to send credit update back to Orchestrator when dropped
         // and removes cancellation token
         let cancellation_token = CancellationToken::new();
         self.cancellation_tokens.insert(job_id, cancellation_token.clone());
-        let _credit_guard = JobGuard::new(
+        let _job_guard = JobGuard::new(
             self.orchestrator_tx.clone(), 
             self.cancellation_tokens.clone(),
             job_id
@@ -117,9 +116,12 @@ impl Executor for Worker {
         let run_result = tokio::select! {
             result = command.wasi_cli_run().call_run(&mut store) => result,
             _ = cancellation_token.cancelled() => {
+                println!("Job cancelled");
                 return Err(ExecutorError::JobCancelled.into())
             }
         };
+
+        println!("Job executed");
 
         let stdout = stdout_pipe.contents().to_vec();
         let stderr = stderr_pipe.contents().to_vec();
@@ -147,6 +149,8 @@ impl Executor for Worker {
         &self,
         request: Request<CancelJobRequest>
     ) -> Result<Response<CancelJobResponse>, Status> {
+        println!("Received cancellation request");
+
         let (metadata, _extensions, request) = request.into_parts();
         let job_id = Uuid::from_slice(&request.job_id)
             .map_err(|_| ExecutorError::JobNotFound)?;
@@ -172,6 +176,7 @@ impl Worker {
     /// Verifies the JWT token in the request metadata matches the given job_id.
     /// Returns Unauthenticated if the token is missing, invalid, or bound to a different job.
     fn check_client_auth(&self, metadata: &MetadataMap, job_id: Uuid) -> Result<(), ExecutorError> {
+        println!("checking client auth");
         let jwt_token = metadata.get("authorization")
             .ok_or(ExecutorError::Unauthenticated)?;
 
@@ -189,6 +194,7 @@ impl Worker {
         if job_claims.sub != job_id {
             Err(ExecutorError::Unauthenticated)
         } else {
+            println!("auth passed");
             Ok(())
         }
     }

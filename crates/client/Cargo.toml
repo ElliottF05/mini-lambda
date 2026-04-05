@@ -7,6 +7,7 @@ edition = "2024"
 shared = { path = "../shared" }
 tonic = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 clap = { workspace = true }
 uuid = { workspace = true }
 thiserror = { workspace = true }

@@ -4,6 +4,7 @@ use shared::{CancelJobRequest, JobRequest};
 use shared::executor_client::ExecutorClient;
 use shared::{WorkerRequest, client_api_client::ClientApiClient};
 use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 use tonic::service::Interceptor;
 use tonic::service::interceptor::InterceptedService;
 use tonic::transport::Channel;
@@ -16,37 +17,49 @@ use crate::job::{Job, JobError, JobOutput, JobState, RunningJob};
 /// Connects to an Orchestrator which assigns workers to run your wasm jobs.
 #[derive(Clone)]
 pub struct Client {
-    orchestrator_client: ClientApiClient<InterceptedService<Channel, AuthInterceptor>>,
+    orchestrator_client: ClientApiClient<InterceptedService<Channel, OrchestratorAuthInterceptor>>,
 }
 
 impl Client {
     /// Connect to an Orchestrator at the given endpoint, returning a Client on success.
-    pub async fn connect(orchestrator_endpoint: &str, password: Option<String>) -> Result<Client, tonic::transport::Error> {
-        // TODO: handle error better here, maybe make ConnectionError enum
-        let channel = Channel::from_shared(orchestrator_endpoint.to_string()).unwrap().connect().await?;
-        let orchestrator_client = ClientApiClient::with_interceptor(channel, AuthInterceptor { password });
+    pub async fn connect(orchestrator_endpoint: &str, password: Option<String>) -> Result<Client, ClientError> {
+        let channel = Channel::from_shared(orchestrator_endpoint.to_string())
+            .map_err(|e| ClientError::InvalidEndpoint(e.to_string()))?
+            .connect().await?;
+        let orchestrator_client = ClientApiClient::with_interceptor(channel, OrchestratorAuthInterceptor { password });
         Ok(Client { orchestrator_client })
     }
 
     /// Submit a job for execution and return a RunningJob handle immediately.
     /// The job is queued until a worker becomes available, then executed automatically.
     pub fn submit_job(&self, job: Job) -> RunningJob {
-        let (state_tx, state_rx) = watch::channel(JobState::Queued);
         let job_id = Uuid::new_v4();
+        let (state_tx, state_rx) = watch::channel(JobState::Queued);
+        let cancel_token = CancellationToken::new();
 
+        let state_tx_timeout = state_tx.clone();
+        let cancel_token_handle = cancel_token.clone();
+        let cancel_token_timeout = cancel_token.clone();
         let mut client = self.clone();
-        let state_tx1 = state_tx.clone();
 
-        let task = tokio::task::spawn(async move {
-            let state_tx2 = state_tx1.clone();
-            let future = async move {
-                let job_id = job_id.as_bytes().to_vec();
-                let worker_request = WorkerRequest { job_id: job_id.clone() };
+        tokio::spawn(async move {
+            let mut submit_task = tokio::spawn(async move {
+                let job_id_bytes = job_id.as_bytes().to_vec();
+                let worker_request = Request::new(WorkerRequest { job_id: job_id_bytes.clone() });
 
-                let response = match client.orchestrator_client.request_worker(Request::new(worker_request)).await {
-                    Ok(r) => r.into_inner(),
-                    Err(e) => {
-                        state_tx2.send(JobState::Completed(Err(JobError::Internal(e.to_string())))).ok();
+                let response = tokio::select! {
+                    result = client.orchestrator_client.request_worker(worker_request) => {
+                        match result {
+                            Ok(r) => r.into_inner(),
+                            Err(e) => {
+                                state_tx.send(JobState::Completed(Err(JobError::Internal(e.to_string())))).ok();
+                                return;
+                            }
+                        }
+                    },
+                    _ = cancel_token.cancelled() => {
+                        client.cancel_queued_job(job_id).await.ok();
+                        state_tx.send(JobState::Cancelled).ok();
                         return;
                     }
                 };
@@ -54,61 +67,69 @@ impl Client {
                 let worker_address = response.worker_address; 
                 let worker_endpoint = "http://".to_string() + &worker_address;
                 let jwt_token = response.jwt_token;
-                if state_tx2.send(JobState::Executing { worker_address }).is_err() {
+                if state_tx.send(JobState::Executing).is_err() {
                     return; // no listening RunningJob's, so no point running the task
                 };
-
-                // let mut executor_client = match ExecutorClient::connect(worker_endpoint).await {
-                //     Ok(c) => c,
-                //     Err(e) => {
-                //         state_tx2.send(JobState::Completed(Err(JobError::Internal(e.to_string())))).ok();
-                //         return;
-                //     }
-                // };
                 
-                // TODO: handle errors here (look at commented out section)
-                let channel = Channel::from_shared(worker_endpoint).unwrap().connect().await.unwrap();
-                let mut executor_client = ExecutorClient::with_interceptor(channel, move |mut req: Request<()>| {
-                    // TODO: handle this error
-                    let val = jwt_token.parse().unwrap();
-                    req.metadata_mut().insert("authorization", val);
-                    Ok(req)
+                let channel = match Channel::from_shared(worker_endpoint.to_string()) {
+                    Ok(endpoint) => {
+                        match endpoint.connect().await {
+                            Ok(c) => c,
+                            Err(e) => {
+                                state_tx.send(JobState::Completed(Err(JobError::Internal(e.to_string())))).ok();
+                                return;
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        state_tx.send(JobState::Completed(Err(JobError::Internal(e.to_string())))).ok();
+                        return;
+                    }
+                };
+                let mut executor_client = ExecutorClient::with_interceptor(channel, WorkerJwtInterceptor { jwt_token });
+
+                let job_request = Request::new(JobRequest { 
+                    job_id: job_id_bytes, 
+                    wasm_bytes: job.wasm_bytes, 
+                    args: job.args 
                 });
 
-                let job_request = JobRequest { job_id, wasm_bytes: job.wasm_bytes, args: job.args };
-
-                let execution_result = executor_client.execute_job(Request::new(job_request)).await;
+                let execution_result = tokio::select! {
+                    r = executor_client.execute_job(job_request) => r,
+                    _ = cancel_token.cancelled() => {
+                        client.cancel_running_job(job_id, executor_client).await.ok();
+                        return;
+                    }
+                };
                 match execution_result {
                     Ok(job_response) => {
                         let job_response = job_response.into_inner();
                         let stdout = job_response.stdout;
                         let stderr = job_response.stderr;
                         let job_output = JobOutput { stdout, stderr };
-                        state_tx2.send(JobState::Completed(Ok(job_output))).ok();
+                        state_tx.send(JobState::Completed(Ok(job_output))).ok();
                     },
                     Err(e) => {
-                        state_tx2.send(JobState::Completed(Err(JobError::from(e)))).ok();
+                        state_tx.send(JobState::Completed(Err(JobError::from(e)))).ok();
                     }
                 }
-            };
+            });
 
             let timeout = job.timeout.unwrap_or(Duration::MAX);
-            match tokio::time::timeout(timeout, future).await {
-                Ok(_) => {},
-                Err(_) => {
-                    state_tx1.send(JobState::Completed(Err(JobError::TimedOut))).ok();
+            tokio::select! {
+                _ = &mut submit_task => {},
+                _ = tokio::time::sleep(timeout) => {
+                    cancel_token_timeout.cancel();
+                    submit_task.await.ok(); // wait for submit_task cleanup
+                    state_tx_timeout.send(JobState::Completed(Err(JobError::TimedOut))).ok();
                 }
-            }
+            };
         });
 
-        let abort_handle = task.abort_handle();
 
         return RunningJob {
-            job_id,
             state_rx,
-            state_tx,
-            abort: abort_handle,
-            client: self.clone()
+            cancel_token: cancel_token_handle,
         }
     }
 
@@ -125,11 +146,7 @@ impl Client {
     }
 
     /// Send a cancellation request to the worker currently executing a job.
-    pub(crate) async fn cancel_running_job(&self, job_id: Uuid, worker_address: &str) -> Result<(), Status> {
-        let worker_endpoint = format!("http://{}", worker_address);
-        let mut executor_client = ExecutorClient::connect(worker_endpoint).await
-            .map_err(|e| Status::unavailable(e.to_string()))?;
-        
+    pub(crate) async fn cancel_running_job(&self, job_id: Uuid, mut executor_client: ExecutorClient<InterceptedService<Channel, WorkerJwtInterceptor>>) -> Result<(), Status> {
         let cancellation_result = executor_client.cancel_job(CancelJobRequest {
             job_id: job_id.as_bytes().to_vec()
         }).await;
@@ -142,13 +159,15 @@ impl Client {
 }
 
 
-// TODO: simple documentation here and for call method below
+/// Injects the client password into the authorization header of every outbound request
+/// to the Orchestrator.
+/// No-op if no password is configured.
 #[derive(Clone)]
-struct AuthInterceptor {
+struct OrchestratorAuthInterceptor {
     password: Option<String>
 }
 
-impl Interceptor for AuthInterceptor {
+impl Interceptor for OrchestratorAuthInterceptor {
     fn call(&mut self, mut request: Request<()>) -> Result<Request<()>, Status> {
         if let Some(pass) = &self.password {
             let val = pass.parse()
@@ -157,4 +176,28 @@ impl Interceptor for AuthInterceptor {
         }
         Ok(request)
     }
+}
+
+/// Injects the job's jwt token into the authorization header of every outbound request to the worker.
+#[derive(Clone)]
+pub(crate) struct WorkerJwtInterceptor {
+    jwt_token: String,
+}
+
+impl Interceptor for WorkerJwtInterceptor {
+    fn call(&mut self, mut request: Request<()>) -> Result<Request<()>, Status> {
+        let val = self.jwt_token.parse()
+            .unwrap_or_else(|e| panic!("orchestrator returned a malformed jwt token: {e}"));
+        request.metadata_mut().insert("authorization", val);
+        Ok(request)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ClientError {
+    #[error("the provided orchestrator endpoint is invalid: {0}")]
+    InvalidEndpoint(String),
+
+    #[error("failed to connect to the orchestrator: {0}")]
+    ConnectionFailed(#[from] tonic::transport::Error),
 }

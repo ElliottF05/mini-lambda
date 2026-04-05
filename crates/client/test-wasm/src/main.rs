@@ -18,11 +18,11 @@ fn main() {
         }
     };
     
-    // let res = fib(n);
-    // print!("fib({n}) = {res}");
+    let res = fib(n);
+    print!("fib({n}) = {res}");
 
-    sleep(Duration::from_secs(n.into()));
-    print!("slept for {} seconds", n);
+    // sleep(Duration::from_secs(n.into()));
+    // print!("slept for {} seconds", n);
 
 }
 
