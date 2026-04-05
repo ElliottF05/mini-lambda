@@ -73,7 +73,7 @@ impl Worker {
                         break;
                     },
                     Err(e) => {
-                        eprintln!("Received an error from the Orchestrator: {}, shutting down", e);
+                        eprintln!("Received a stream error from the Orchestrator: {}, shutting down", e);
                         break;
                     }
                 }
@@ -86,10 +86,12 @@ impl Worker {
     pub async fn handle_orchestrator_message(&self, message: OrchestratorMessage) {
         match message.message {
             Some(orchestrator_message::Message::RegistrationAck(_ack)) => {
-                eprintln!("Unexpectedly received registration ack while already registered");
+                eprintln!("ERROR: received registration ack while already registered, this should never happen");
+                std::process::exit(1);
             },
             None => {
-                println!("Received empty message from orchestrator");
+                eprintln!("ERROR: orchestrator sent a message with no content, this should never happen");
+                std::process::exit(1);
             }
         }
     }

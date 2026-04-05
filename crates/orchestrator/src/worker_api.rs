@@ -62,15 +62,11 @@ impl WorkerApi for Orchestrator {
                                 orchestrator.handle_credit_update(&worker_address, credit_update).await;
                             },
                             Some(worker_message::Message::Registration(_)) => {
-                                eprintln!(
-                                    "ERROR: worker {} sent a second registration after already registering, this should never happen", worker_address
-                                );
+                                eprintln!("ERROR: worker {} sent a second registration after already registering, this should never happen", worker_address);
                                 std::process::exit(1);
                             },
                             None => {
-                                eprintln!(
-                                    "FATAL: worker {} sent a message with no content, this should never happen", worker_address
-                                );
+                                eprintln!("ERROR: worker {} sent a message with no content, this should never happen", worker_address);
                                 std::process::exit(1);
                             }
                         }

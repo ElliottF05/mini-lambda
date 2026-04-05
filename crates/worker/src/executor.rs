@@ -59,7 +59,10 @@ impl Executor for Worker {
         // Extract request info
         let (metadata, _extensions, request) = request.into_parts();
         let job_id = Uuid::from_slice(&request.job_id)
-            .map_err(|_| ExecutorError::MalformedJobId)?;
+            .unwrap_or_else(|e| {
+                eprintln!("ERROR: worker received a malformed job id from the client, this should never happen: {}", e);
+                std::process::exit(1);
+            });
         let wasm_bytes = request.wasm_bytes;
         let mut wasi_args = vec![job_id.to_string()];
         wasi_args.extend(request.args);
@@ -93,7 +96,10 @@ impl Executor for Worker {
                         .map_err(ExecutorError::CompilationFailed)
                 })
                 .await
-                .unwrap_or_else(|e| panic!("compilation task panicked: {e}"))
+                .unwrap_or_else(|e| {
+                    eprintln!("ERROR: wasm compilation task panicked, this should never happen: {e}");
+                    std::process::exit(1);
+                })
             })
             .await?;
 
@@ -116,17 +122,12 @@ impl Executor for Worker {
             let command = Command::instantiate_async(&mut store, component, &worker.wasm_linker).await
                 .map_err(ExecutorError::InstantiationFailed)?;
 
-            println!("here");
-
             let run_result = tokio::select! {
                 result = command.wasi_cli_run().call_run(&mut store) => result,
                 _ = cancellation_token.cancelled() => {
-                    println!("Job cancelled");
                     return Err(ExecutorError::JobCancelled.into())
                 }
             };
-
-            println!("Job executed");
 
             let stdout = stdout_pipe.contents().to_vec();
             let stderr = stderr_pipe.contents().to_vec();
@@ -157,11 +158,12 @@ impl Executor for Worker {
         &self,
         request: Request<CancelJobRequest>
     ) -> Result<Response<CancelJobResponse>, Status> {
-        println!("Received cancellation request");
-
         let (metadata, _extensions, request) = request.into_parts();
         let job_id = Uuid::from_slice(&request.job_id)
-            .map_err(|_| ExecutorError::JobNotFound)?;
+            .unwrap_or_else(|e| {
+                eprintln!("ERROR: worker received a malformed job id from the client, this should never happen: {}", e);
+                std::process::exit(1);
+            });
 
         // Check authentication
         self.check_client_auth(&metadata, job_id)?;
@@ -169,13 +171,11 @@ impl Executor for Worker {
         // Cancel the job via the cancellation token
         match self.cancellation_tokens.get(&job_id) {
             Some(cancellation_token) => {
-                println!("Cancelled token");
                 cancellation_token.cancel();
                 self.wasm_engine.increment_epoch(); // increment the epoch immediately so control is yielded back
                 Ok(Response::new(CancelJobResponse {}))
             },
             None => {
-                println!("ERROR: No cancellation token found");
                 Err(ExecutorError::JobNotFound.into())
             }
         }
@@ -186,15 +186,14 @@ impl Worker {
     /// Verifies the JWT token in the request metadata matches the given job_id.
     /// Returns Unauthenticated if the token is missing, invalid, or bound to a different job.
     fn check_client_auth(&self, metadata: &MetadataMap, job_id: Uuid) -> Result<(), ExecutorError> {
-        println!("checking client auth");
         let jwt_token = metadata.get("authorization")
             .ok_or(ExecutorError::Unauthenticated)?;
-
-        // TODO: check if i can panic in here, since its an interceptor.
-        // this is a program invariant, so i want to crash loudly instead
-        // of return some status code or error
+        
         let secret = self.jwt_secret.get()
-            .expect("worker should always have received jwt secret before running a job");
+            .unwrap_or_else(|| {
+                eprintln!("ERROR: worker should always have received jwt secret before running a job, this should never happen");
+                std::process::exit(1);
+            });
 
         let token_data = jsonwebtoken::decode(
             jwt_token, 
