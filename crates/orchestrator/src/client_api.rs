@@ -21,7 +21,10 @@ impl ClientApi for Orchestrator {
 
         // Create the pending job
         let job_id = Uuid::from_slice(&request.into_inner().job_id)
-            .map_err(|e| OrchestratorError::MalformedJobId(e.to_string()))?;
+            .unwrap_or_else(|e| {
+                eprintln!("ERROR: received malformed job_id bytes from the client, which should never occur: {}", e);
+                std::process::exit(1);
+            });
         let (tx, rx) = oneshot::channel();
 
         // Add this job to the queue and dispatch pending jobs atomically
@@ -35,10 +38,7 @@ impl ClientApi for Orchestrator {
 
         // Awake when this job is dispatched
         match rx.await {
-            Ok(response) => {
-                println!("Worker at {} became available, dequeueing job with id {}", response.worker_address, job_id);
-                Ok(Response::new(response))
-            },
+            Ok(response) => Ok(Response::new(response)),
             Err(_) => Err(OrchestratorError::JobCancelled.into())
         }
     }
@@ -52,7 +52,10 @@ impl ClientApi for Orchestrator {
         request: Request<CancelJobRequest>
     ) -> Result<Response<CancelJobResponse>, Status> {
         let job_id = Uuid::from_slice(&request.into_inner().job_id)
-            .map_err(|e| OrchestratorError::MalformedJobId(e.to_string()))?;
+            .unwrap_or_else(|e| {
+                eprintln!("FATAL: received malformed job_id bytes from the client, which should never occur: {}", e);
+                std::process::exit(1);
+            });
 
         if self.job_queue.lock().await.cancel(&job_id) {
             Ok(Response::new(CancelJobResponse {}))

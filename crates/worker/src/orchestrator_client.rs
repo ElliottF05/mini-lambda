@@ -34,7 +34,10 @@ impl Worker {
 
         // Connect and get the response stream
         let response = client.connect_worker(Request::new(outbound)).await
-            .unwrap_or_else(|e| panic!("Orchestrator should accept worker connections during startup, received error {}", e));
+            .unwrap_or_else(|e| {
+                println!("hello");
+                panic!("Orchestrator should accept worker connections during startup, received error {}", e)
+            });
         let inbound = response.into_inner();
 
         (tx, inbound)

@@ -1,6 +1,5 @@
 use jsonwebtoken::{EncodingKey, Header};
 use tokio::sync::mpsc;
-use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Status, Response, Streaming};
 
@@ -30,43 +29,62 @@ impl WorkerApi for Orchestrator {
         // Spawn a task to handle the bidirectional communication
         let orchestrator = self.clone(); // Clone for move into async task
         tokio::spawn(async move {
-
+            println!("about to start listening for registration");
             // Expect a registration as the first message
-            let worker_address = match inbound.next().await {
-                Some(Ok(WorkerMessage { message: Some(worker_message::Message::Registration(registration)) })) => {
-                    orchestrator.handle_worker_registration(tx.clone(), &registration).await;
+            let worker_address = match inbound.message().await {
+                Ok(Some(WorkerMessage { message: Some(worker_message::Message::Registration(registration)) })) => {
+                    if !orchestrator.handle_worker_registration(tx.clone(), &registration).await {
+                        println!("failed to handle worker registration");
+                        return;
+                    };
                     registration.address
                 },
-                _ => {
-                    eprintln!("Worker connected without sending registration first");
+                Ok(Some(m)) => {
+                    eprintln!("ERROR: should always receive registration as first message, got {:?}", m);
+                    std::process::exit(1);
+                },
+                Ok(None) => {
+                    eprintln!("Worker disconnected before sending registration");
+                    return;
+                },
+                Err(e) => {
+                    eprintln!("Stream error before worker registration: {:?}", e);
                     return;
                 }
             };
 
-            while let Some(result) = inbound.next().await {
-                match result {
-                    Ok(worker_msg) => {
-                        // Handle different message types
-                        match worker_msg.message {
+            println!("worker was registered");
+            loop {
+                match inbound.message().await {
+                    Ok(Some(worker_message)) => {
+                        match worker_message.message {
                             Some(worker_message::Message::CreditUpdate(credit_update)) => {
                                 orchestrator.handle_credit_update(&worker_address, credit_update).await;
                             },
                             Some(worker_message::Message::Registration(_)) => {
-                                eprintln!("Worker {} sent a duplicate registration", worker_address);
+                                eprintln!(
+                                    "ERROR: worker {} sent a second registration after already registering, this should never happen", worker_address
+                                );
+                                std::process::exit(1);
                             },
                             None => {
-                                eprintln!("Received empty message from worker");
+                                eprintln!(
+                                    "FATAL: worker {} sent a message with no content, this should never happen", worker_address
+                                );
+                                std::process::exit(1);
                             }
                         }
-
+                    },
+                    Ok(None) => {
+                        println!("Worker {} disconnected", worker_address);
+                        break;
                     },
                     Err(e) => {
-                        eprintln!("Error receiving message from worker: {:?}", e);
+                        eprintln!("Worker {} stream error, deregistering: {:?}", worker_address, e);
                         break;
                     }
                 }
             }
-            println!("Worker disconnected");
             orchestrator.registry.lock().await.deregister_worker(&worker_address);
         });
 
@@ -80,7 +98,7 @@ impl WorkerApi for Orchestrator {
 type OutboundTx = mpsc::Sender<Result<OrchestratorMessage, Status>>;
 impl Orchestrator {
     /// Handles an incoming Worker registration message.
-    async fn handle_worker_registration(&self, tx: OutboundTx, registration: &shared::WorkerRegistration) {
+    async fn handle_worker_registration(&self, tx: OutboundTx, registration: &shared::WorkerRegistration) -> bool {
         println!("Handling worker registration: {:?}", registration);
         {
             let mut queue = self.job_queue.lock().await;
@@ -97,9 +115,12 @@ impl Orchestrator {
             ))
         };
         if tx.send(Ok(ack)).await.is_err() {
-            eprintln!("Failed to send registration ack to worker");
+            eprintln!("Failed to send registration ack to worker {}, deregistering", registration.address);
+            self.registry.lock().await.deregister_worker(&registration.address);
+            false
         } else {
             println!("Worker registered, registration ack sent to worker");
+            true
         }
     }
 
@@ -121,12 +142,18 @@ impl Orchestrator {
             match queue.dequeue() {
                 Some((job_id, tx)) => {
                     let worker_address = registry.get_worker()
-                        .expect("registry credit availability checked by has_available_credits()");
+                        .unwrap_or_else(|| {
+                            eprintln!("ERROR: worker availability in registry should be guarantted by has_available_credits() above");
+                            std::process::exit(1);
+                        });
                     let header = Header::default();
                     let job_claims = JobClaims::new(job_id);
                     let key = EncodingKey::from_secret(jwt_secret);
                     let jwt_token = jsonwebtoken::encode(&header, &job_claims, &key)
-                        .unwrap_or_else(|e| panic!("jwt encoding failed, this should not happen: {e}"));
+                        .unwrap_or_else(|e| {
+                            eprintln!("ERROR: jwt encoding failed, this should not happen: {e}");
+                            std::process::exit(1);
+                        });
 
                     // TODO: revise credit update system, see ROADMAP.md 
                     tx.send(WorkerResponse { worker_address, jwt_token }).ok();

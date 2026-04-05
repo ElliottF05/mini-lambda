@@ -6,9 +6,6 @@ pub enum OrchestratorError {
 
     #[error("tried to cancel a job which couldn't be found or was already cancelled")]
     JobNotFound,
-
-    #[error("received malformed job id: {0}")]
-    MalformedJobId(String),
 }
 
 impl From<OrchestratorError> for tonic::Status {
@@ -16,7 +13,6 @@ impl From<OrchestratorError> for tonic::Status {
         match e {
             OrchestratorError::JobCancelled => tonic::Status::cancelled(e.to_string()),
             OrchestratorError::JobNotFound => tonic::Status::not_found(e.to_string()),
-            OrchestratorError::MalformedJobId(_) => tonic::Status::invalid_argument(e.to_string()),
         }
     }
 }

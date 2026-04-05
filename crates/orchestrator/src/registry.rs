@@ -44,6 +44,7 @@ impl WorkerRegistry {
         }
     }
 
+    /// Removes a given worker from the registry. Logs an error if the worker isn't present.
     pub fn deregister_worker(&mut self, worker_address: &str) {
         if self.inner.remove(worker_address).is_none() {
             eprintln!("Attempted to remove an unknown worker: {}", worker_address);
