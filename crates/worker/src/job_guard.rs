@@ -29,7 +29,12 @@ impl Drop for JobGuard {
     /// Sends a credit update to the Orchestrator, returning one credit.
     /// Also drops Worker resources associated with this job
     fn drop(&mut self) {
-        self.cancellation_tokens.remove(&self.job_id);
+        if let Some((_, cancel)) = self.cancellation_tokens.remove(&self.job_id) {
+            cancel.cancel(); // Cancel again here for redundancy
+        } else {
+            eprintln!("ERROR: missing cancellation token, this should never happen");
+            std::process::exit(1);
+        }
         let tx= self.tx.clone();
         tokio::spawn(async move {
             if tx.send(WorkerMessage { 
