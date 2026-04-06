@@ -151,8 +151,9 @@ impl Orchestrator {
                             std::process::exit(1);
                         });
 
-                    // TODO: revise credit update system, see ROADMAP.md 
-                    tx.send(WorkerResponse { worker_address, jwt_token }).ok();
+                    if tx.send(WorkerResponse { worker_address: worker_address.clone(), jwt_token }).is_err() {
+                        registry.update_credits(&worker_address, 1);
+                    }
                 },
                 None => break
             }
