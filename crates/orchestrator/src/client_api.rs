@@ -25,6 +25,9 @@ impl ClientApi for Orchestrator {
                 tracing::error!(error = %e, "ERROR: received malformed job_id bytes from the client, this should never occur");
                 std::process::exit(1);
             });
+
+        tracing::info!(job_id = %job_id, "job request received");
+
         let (tx, rx) = oneshot::channel();
 
         tracing::debug!(job_id = %job_id, "job enqueued, waiting for worker");
@@ -40,7 +43,10 @@ impl ClientApi for Orchestrator {
 
         // Awake when this job is dispatched
         match rx.await {
-            Ok(response) => Ok(Response::new(response)),
+            Ok(response) => {
+                tracing::info!(job_id = %job_id, worker = %response.worker_address, "worker assigned");
+                Ok(Response::new(response))
+            },
             Err(_) => Err(OrchestratorError::JobCancelled.into())
         }
     }
@@ -60,8 +66,10 @@ impl ClientApi for Orchestrator {
             });
 
         if self.job_queue.lock().await.cancel(&job_id) {
+            tracing::debug!(job_id = %job_id, "job cancelled from queue");
             Ok(Response::new(CancelJobResponse {}))
         } else {
+            tracing::debug!(job_id = %job_id, "cancel requested but job not in queue (may have been dispatched)");
             Err(OrchestratorError::JobNotFound.into())
         }
     }

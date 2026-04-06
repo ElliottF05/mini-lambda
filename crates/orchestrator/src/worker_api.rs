@@ -154,6 +154,7 @@ impl Orchestrator {
 
                     tracing::debug!(job_id = %job_id, worker = %worker_address, "job dispatched to worker");
                     if tx.send(WorkerResponse { worker_address: worker_address.clone(), jwt_token }).is_err() {
+                        tracing::debug!(job_id = %job_id, worker = %worker_address, "client disconnected before dispatch, restoring credit");
                         registry.update_credits(&worker_address, 1);
                     }
                 },

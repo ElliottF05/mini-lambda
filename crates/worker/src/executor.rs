@@ -137,7 +137,7 @@ impl Executor for Worker {
 
             match run_result {
                 Ok(Ok(())) => {
-                    tracing::debug!(job_id = %job_id, "job completed successfully");
+                    tracing::info!(job_id = %job_id, "job completed successfully");
                     Ok(Response::new(JobResponse { stdout, stderr }))
                 },
                 Ok(Err(())) => Err(ExecutorError::ExecutionFailed(format!("stderr: {}", String::from_utf8_lossy(&stderr))).into()),
