@@ -32,15 +32,15 @@ impl Drop for JobGuard {
         if let Some((_, cancel)) = self.cancellation_tokens.remove(&self.job_id) {
             cancel.cancel(); // Cancel again here for redundancy
         } else {
-            eprintln!("ERROR: missing cancellation token, this should never happen");
+            tracing::error!(job_id = %self.job_id, "ERROR: missing cancellation token in job guard, this should never happen");
             std::process::exit(1);
         }
-        let tx= self.tx.clone();
+        let tx = self.tx.clone();
         tokio::spawn(async move {
-            if tx.send(WorkerMessage { 
+            if tx.send(WorkerMessage {
                 message: Some(worker_message::Message::CreditUpdate(CreditUpdate { delta: 1 }))
             }).await.is_err() {
-                eprintln!("Lost connection to the Orchestrator, shutting down");
+                tracing::error!("lost connection to the orchestrator, shutting down");
                 std::process::exit(1);
             }
         });

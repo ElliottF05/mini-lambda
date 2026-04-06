@@ -20,19 +20,33 @@ struct Args {
     worker_password: Option<String>,
     #[arg(long, help = "Password required for clients to submit jobs. If not set, no password is required.")]
     client_password: Option<String>,
+    #[arg(long, help = "Enable debug logging")]
+    verbose: bool,
+}
+
+fn init_tracing(verbose: bool) {
+    let filter = if verbose { "orchestrator=debug" } else { "orchestrator=info" };
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| filter.into())
+        )
+        .init();
 }
 
 /// Main entry point for the Orchestrator server binary.
 #[tokio::main]
 pub async fn main() {
     let args = Args::parse();
+    init_tracing(args.verbose);
+
     let addr = args.addr;
     let orchestrator = Orchestrator::new(args.worker_password, args.client_password);
 
     let client_server = ClientApiServer::with_interceptor(orchestrator.clone(), check_client_auth(orchestrator.clone()));
     let worker_server = WorkerApiServer::with_interceptor(orchestrator.clone(), check_worker_auth(orchestrator.clone()));
-    
-    println!("Orchestrator listening on {}", addr);
+
+    tracing::info!("Orchestrator listening on {}", addr);
     Server::builder()
         .add_service(client_server)
         .add_service(worker_server)

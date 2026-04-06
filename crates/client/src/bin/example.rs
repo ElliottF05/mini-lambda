@@ -11,7 +11,7 @@ async fn main() {
         .unwrap_or_else(|e| panic!("wasm path not found: {}", e));
     let password = "password".to_string();
 
-    let client = Client::connect("http://127.0.0.1:50051", Some(password)).await
+    let client = Client::connect("http://127.0.0.1:50051", Some(password), true).await
         .unwrap_or_else(|e| panic!("failed to connect to the client: {}", e));
 
     let mut handles = vec![];

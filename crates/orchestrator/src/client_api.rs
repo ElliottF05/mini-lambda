@@ -22,10 +22,12 @@ impl ClientApi for Orchestrator {
         // Create the pending job
         let job_id = Uuid::from_slice(&request.into_inner().job_id)
             .unwrap_or_else(|e| {
-                eprintln!("ERROR: received malformed job_id bytes from the client, which should never occur: {}", e);
+                tracing::error!(error = %e, "ERROR: received malformed job_id bytes from the client, this should never occur");
                 std::process::exit(1);
             });
         let (tx, rx) = oneshot::channel();
+
+        tracing::debug!(job_id = %job_id, "job enqueued, waiting for worker");
 
         // Add this job to the queue and dispatch pending jobs atomically
         {
@@ -44,7 +46,7 @@ impl ClientApi for Orchestrator {
     }
 
     /// A function exposed by the Orchestrator for the Client to call
-    /// to cancel a job waiting in the Orchestrator queue. 
+    /// to cancel a job waiting in the Orchestrator queue.
     /// If this job is in the Orchestrator queue, it will remove it.
     /// Returns an error on invalid job id.
     async fn cancel_job(
@@ -53,7 +55,7 @@ impl ClientApi for Orchestrator {
     ) -> Result<Response<CancelJobResponse>, Status> {
         let job_id = Uuid::from_slice(&request.into_inner().job_id)
             .unwrap_or_else(|e| {
-                eprintln!("FATAL: received malformed job_id bytes from the client, which should never occur: {}", e);
+                tracing::error!(error = %e, "ERROR: received malformed job_id bytes from the client, this should never occur");
                 std::process::exit(1);
             });
 

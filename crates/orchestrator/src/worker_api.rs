@@ -29,31 +29,31 @@ impl WorkerApi for Orchestrator {
         // Spawn a task to handle the bidirectional communication
         let orchestrator = self.clone(); // Clone for move into async task
         tokio::spawn(async move {
-            println!("about to start listening for registration");
+            tracing::debug!("waiting for worker registration");
             // Expect a registration as the first message
             let worker_address = match inbound.message().await {
                 Ok(Some(WorkerMessage { message: Some(worker_message::Message::Registration(registration)) })) => {
                     if !orchestrator.handle_worker_registration(tx.clone(), &registration).await {
-                        println!("failed to handle worker registration");
+                        tracing::warn!(worker = %registration.address, "failed to handle worker registration");
                         return;
                     };
                     registration.address
                 },
                 Ok(Some(m)) => {
-                    eprintln!("ERROR: should always receive registration as first message, got {:?}", m);
+                    tracing::error!("ERROR: should always receive registration as first message, got {:?}", m);
                     std::process::exit(1);
                 },
                 Ok(None) => {
-                    eprintln!("Worker disconnected before sending registration");
+                    tracing::warn!("worker disconnected before sending registration");
                     return;
                 },
                 Err(e) => {
-                    eprintln!("Stream error before worker registration: {:?}", e);
+                    tracing::warn!(error = ?e, "stream error before worker registration");
                     return;
                 }
             };
 
-            println!("worker was registered");
+            tracing::info!(worker = %worker_address, "worker registered");
             loop {
                 match inbound.message().await {
                     Ok(Some(worker_message)) => {
@@ -62,21 +62,21 @@ impl WorkerApi for Orchestrator {
                                 orchestrator.handle_credit_update(&worker_address, credit_update).await;
                             },
                             Some(worker_message::Message::Registration(_)) => {
-                                eprintln!("ERROR: worker {} sent a second registration after already registering, this should never happen", worker_address);
+                                tracing::error!(worker = %worker_address, "ERROR: worker sent a second registration after already registering, this should never happen");
                                 std::process::exit(1);
                             },
                             None => {
-                                eprintln!("ERROR: worker {} sent a message with no content, this should never happen", worker_address);
+                                tracing::error!(worker = %worker_address, "ERROR: worker sent a message with no content, this should never happen");
                                 std::process::exit(1);
                             }
                         }
                     },
                     Ok(None) => {
-                        println!("Worker {} disconnected", worker_address);
+                        tracing::info!(worker = %worker_address, "worker disconnected");
                         break;
                     },
                     Err(e) => {
-                        eprintln!("Worker {} stream error, deregistering: {:?}", worker_address, e);
+                        tracing::warn!(worker = %worker_address, error = ?e, "worker stream error, deregistering");
                         break;
                     }
                 }
@@ -95,7 +95,7 @@ type OutboundTx = mpsc::Sender<Result<OrchestratorMessage, Status>>;
 impl Orchestrator {
     /// Handles an incoming Worker registration message.
     async fn handle_worker_registration(&self, tx: OutboundTx, registration: &shared::WorkerRegistration) -> bool {
-        println!("Handling worker registration: {:?}", registration);
+        tracing::debug!(worker = %registration.address, credits = registration.credits, "handling worker registration");
         {
             let mut queue = self.job_queue.lock().await;
             let mut registry = self.registry.lock().await;
@@ -111,11 +111,11 @@ impl Orchestrator {
             ))
         };
         if tx.send(Ok(ack)).await.is_err() {
-            eprintln!("Failed to send registration ack to worker {}, deregistering", registration.address);
+            tracing::error!(worker = %registration.address, "failed to send registration ack, deregistering");
             self.registry.lock().await.deregister_worker(&registration.address);
             false
         } else {
-            println!("Worker registered, registration ack sent to worker");
+            tracing::info!(worker = %registration.address, "registration ack sent to worker");
             true
         }
     }
@@ -123,6 +123,7 @@ impl Orchestrator {
     /// Handles a credit update from a Worker, updating its available credits in the registry
     /// and dispatching any pending jobs that can now be served.
     async fn handle_credit_update(&self, worker_address: &str, credit_update: CreditUpdate) {
+        tracing::debug!(worker = %worker_address, delta = credit_update.delta, "credit update received");
         let mut queue = self.job_queue.lock().await;
         let mut registry = self.registry.lock().await;
 
@@ -139,7 +140,7 @@ impl Orchestrator {
                 Some((job_id, tx)) => {
                     let worker_address = registry.get_worker()
                         .unwrap_or_else(|| {
-                            eprintln!("ERROR: worker availability in registry should be guarantted by has_available_credits() above");
+                            tracing::error!("ERROR: worker availability in registry should be guaranteed by has_available_credits() above");
                             std::process::exit(1);
                         });
                     let header = Header::default();
@@ -147,10 +148,11 @@ impl Orchestrator {
                     let key = EncodingKey::from_secret(jwt_secret);
                     let jwt_token = jsonwebtoken::encode(&header, &job_claims, &key)
                         .unwrap_or_else(|e| {
-                            eprintln!("ERROR: jwt encoding failed, this should not happen: {e}");
+                            tracing::error!(error = %e, "ERROR: jwt encoding failed, this should not happen");
                             std::process::exit(1);
                         });
 
+                    tracing::debug!(job_id = %job_id, worker = %worker_address, "job dispatched to worker");
                     if tx.send(WorkerResponse { worker_address: worker_address.clone(), jwt_token }).is_err() {
                         registry.update_credits(&worker_address, 1);
                     }

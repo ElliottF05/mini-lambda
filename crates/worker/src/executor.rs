@@ -54,15 +54,15 @@ impl Executor for Worker {
         &self, 
         request: Request<JobRequest>
     ) -> Result<Response<JobResponse>, Status> {
-        println!("Received job to execute...");
-
         // Extract request info
         let (metadata, _extensions, request) = request.into_parts();
         let job_id = Uuid::from_slice(&request.job_id)
             .unwrap_or_else(|e| {
-                eprintln!("ERROR: worker received a malformed job id from the client, this should never happen: {}", e);
+                tracing::error!(error = %e, "ERROR: worker received a malformed job id, this should never happen");
                 std::process::exit(1);
             });
+
+        tracing::info!(job_id = %job_id, "received job to execute");
         let wasm_bytes = request.wasm_bytes;
         let mut wasi_args = vec![job_id.to_string()];
         wasi_args.extend(request.args);
@@ -89,6 +89,8 @@ impl Executor for Worker {
                 .get_or_insert(wasm_hash, || Arc::new(OnceCell::new()))
                 .clone();
 
+            let cached = cell.initialized();
+            tracing::debug!(job_id = %job_id, cached, "compiling wasm");
             let component = cell.get_or_try_init(|| async {
                 let engine = worker.wasm_engine.clone();
                 tokio::task::spawn_blocking(move || {
@@ -97,7 +99,7 @@ impl Executor for Worker {
                 })
                 .await
                 .unwrap_or_else(|e| {
-                    eprintln!("ERROR: wasm compilation task panicked, this should never happen: {e}");
+                    tracing::error!(error = %e, "ERROR: wasm compilation task panicked, this should never happen");
                     std::process::exit(1);
                 })
             })
@@ -125,6 +127,7 @@ impl Executor for Worker {
             let run_result = tokio::select! {
                 result = command.wasi_cli_run().call_run(&mut store) => result,
                 _ = cancellation_token.cancelled() => {
+                    tracing::info!(job_id = %job_id, "job cancelled");
                     return Err(ExecutorError::JobCancelled.into())
                 }
             };
@@ -133,7 +136,10 @@ impl Executor for Worker {
             let stderr = stderr_pipe.contents().to_vec();
 
             match run_result {
-                Ok(Ok(())) => Ok(Response::new(JobResponse { stdout, stderr })),
+                Ok(Ok(())) => {
+                    tracing::debug!(job_id = %job_id, "job completed successfully");
+                    Ok(Response::new(JobResponse { stdout, stderr }))
+                },
                 Ok(Err(())) => Err(ExecutorError::ExecutionFailed(format!("stderr: {}", String::from_utf8_lossy(&stderr))).into()),
                 Err(e) => {
                     if let Some(exit) = e.downcast_ref::<wasmtime_wasi::I32Exit>() {
@@ -161,7 +167,7 @@ impl Executor for Worker {
         let (metadata, _extensions, request) = request.into_parts();
         let job_id = Uuid::from_slice(&request.job_id)
             .unwrap_or_else(|e| {
-                eprintln!("ERROR: worker received a malformed job id from the client, this should never happen: {}", e);
+                tracing::error!(error = %e, "ERROR: worker received a malformed job id, this should never happen");
                 std::process::exit(1);
             });
 
@@ -189,9 +195,11 @@ impl Worker {
         let jwt_token = metadata.get("authorization")
             .ok_or(ExecutorError::Unauthenticated)?;
 
+        // jwt_secret not being set is an invariant violation — the worker registered with the
+        // orchestrator before accepting any jobs, so this should never happen.
         let secret = self.jwt_secret.get()
             .unwrap_or_else(|| {
-                eprintln!("ERROR: worker should always have received jwt secret before running a job, this should never happen");
+                tracing::error!("ERROR: worker should always have received jwt secret before running a job, this should never happen");
                 std::process::exit(1);
             });
 

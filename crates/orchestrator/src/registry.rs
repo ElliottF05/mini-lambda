@@ -40,14 +40,14 @@ impl WorkerRegistry {
     /// Logs an error if the worker isn't in the registry.
     pub fn update_credits(&mut self, worker_address: &str, delta: u32) {
         if !self.inner.change_priority_by(worker_address, |p| *p += delta) {
-            eprintln!("Attempted to update credits for an unknown worker: {}", worker_address);
+            tracing::warn!(worker = %worker_address, "attempted to update credits for an unknown worker");
         }
     }
 
     /// Removes a given worker from the registry. Logs an error if the worker isn't present.
     pub fn deregister_worker(&mut self, worker_address: &str) {
         if self.inner.remove(worker_address).is_none() {
-            eprintln!("Attempted to remove an unknown worker: {}", worker_address);
+            tracing::warn!(worker = %worker_address, "attempted to remove an unknown worker");
         }
     }
 

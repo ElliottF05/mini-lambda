@@ -9,6 +9,8 @@ struct Args {
     orchestrator: String,
     #[arg(long)]
     password: Option<String>,
+    #[arg(long, help = "Enable debug logging")]
+    verbose: bool,
     #[arg(trailing_var_arg = true)]
     wasm_args: Vec<String>
 }
@@ -17,12 +19,13 @@ struct Args {
 #[tokio::main]
 pub async fn main() {
     let args = Args::parse();
+    let client = Client::connect(&args.orchestrator, args.password, args.verbose).await
+        .unwrap_or_else(|e| panic!("failed to connect to the client: {}", e));
+
     let job = Job::from_path(&args.wasm_path)
         .unwrap_or_else(|e| panic!("wasm file path not found: {}", e))
         .args(args.wasm_args);
 
-    let client = Client::connect(&args.orchestrator, args.password).await
-        .unwrap_or_else(|e| panic!("failed to connect to the client: {}", e));
     let result = client.submit_job(job).wait().await;
     match result {
         Ok(output) => {

@@ -34,10 +34,7 @@ impl Worker {
 
         // Connect and get the response stream
         let response = client.connect_worker(Request::new(outbound)).await
-            .unwrap_or_else(|e| {
-                println!("hello");
-                panic!("Orchestrator should accept worker connections during startup, received error {}", e)
-            });
+            .unwrap_or_else(|e| panic!("Orchestrator should accept worker connections during startup, received error {}", e));
         let inbound = response.into_inner();
 
         (tx, inbound)
@@ -62,6 +59,8 @@ impl Worker {
         };
         self.jwt_secret.set(jwt_secret).ok();
 
+        tracing::info!(address = %self.addr, credits = credits, "registered with orchestrator");
+
         // Spawn a task to handle incoming messages from the orchestrator
         let worker = self.clone();
         tokio::spawn(async move {
@@ -69,11 +68,11 @@ impl Worker {
                 match inbound.message().await {
                     Ok(Some(message)) => worker.handle_orchestrator_message(message).await,
                     Ok(None) => {
-                        eprintln!("Orchestrator stream closed, shutting down");
+                        tracing::info!("orchestrator stream closed, shutting down");
                         break;
                     },
                     Err(e) => {
-                        eprintln!("Received a stream error from the Orchestrator: {}, shutting down", e);
+                        tracing::error!(error = %e, "received a stream error from the orchestrator, shutting down");
                         break;
                     }
                 }
@@ -86,11 +85,11 @@ impl Worker {
     pub async fn handle_orchestrator_message(&self, message: OrchestratorMessage) {
         match message.message {
             Some(orchestrator_message::Message::RegistrationAck(_ack)) => {
-                eprintln!("ERROR: received registration ack while already registered, this should never happen");
+                tracing::error!("ERROR: received registration ack while already registered, this should never happen");
                 std::process::exit(1);
             },
             None => {
-                eprintln!("ERROR: orchestrator sent a message with no content, this should never happen");
+                tracing::error!("ERROR: orchestrator sent a message with no content, this should never happen");
                 std::process::exit(1);
             }
         }

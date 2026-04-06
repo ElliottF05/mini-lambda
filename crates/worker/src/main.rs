@@ -22,12 +22,26 @@ struct Args {
     orchestrator: String,
     #[arg(long)]
     password: Option<String>,
+    #[arg(long, help = "Enable debug logging")]
+    verbose: bool,
+}
+
+fn init_tracing(verbose: bool) {
+    let filter = if verbose { "worker=debug" } else { "worker=info" };
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| filter.into())
+        )
+        .init();
 }
 
 /// Main entry point for the Worker server binary.
 #[tokio::main]
 pub async fn main() {
     let args = Args::parse();
+    init_tracing(args.verbose);
+
     let orchestrator_endpoint = &args.orchestrator;
     let bind_host = &args.bind_host;
     let worker_credits = args.worker_credits;
@@ -40,9 +54,9 @@ pub async fn main() {
 
     // Register this worker with the orchestrator
     let worker = Worker::new(addr, orchestrator_endpoint, password, worker_credits).await;
-    
+
     // Start the executor server
-    println!("Worker listening on {}", addr);
+    tracing::info!("Worker listening on {}", addr);
     let incoming = TcpListenerStream::new(listener);
     Server::builder()
         .add_service(ExecutorServer::new(worker))

@@ -26,7 +26,15 @@ pub struct Client {
 
 impl Client {
     /// Connect to an Orchestrator at the given endpoint, returning a Client on success.
-    pub async fn connect(orchestrator_endpoint: &str, password: Option<String>) -> Result<Client, ClientError> {
+    pub async fn connect(orchestrator_endpoint: &str, password: Option<String>, verbose: bool) -> Result<Client, ClientError> {
+        let filter = if verbose { "client=debug" } else { "client=info" };
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| filter.into())
+            )
+            .try_init();
+            
         let channel = Channel::from_shared(orchestrator_endpoint.to_string())
             .map_err(|e| ClientError::InvalidEndpoint(e.to_string()))?
             .connect().await?;
@@ -51,6 +59,8 @@ impl Client {
                 let job_id_bytes = job_id.as_bytes().to_vec();
                 let worker_request = Request::new(WorkerRequest { job_id: job_id_bytes.clone() });
 
+                tracing::debug!(job_id = %job_id, "job submitted, waiting for worker");
+
                 let response = tokio::select! {
                     result = client.orchestrator_client.request_worker(worker_request) => {
                         match result {
@@ -62,19 +72,22 @@ impl Client {
                         }
                     },
                     _ = cancel_token.cancelled() => {
+                        tracing::debug!(job_id = %job_id, "cancel fired, sending cancel_queued_job");
                         client.cancel_queued_job(job_id).await;
                         state_tx.send(JobState::Cancelled).ok();
                         return;
                     }
                 };
 
-                let worker_address = response.worker_address; 
+                let worker_address = response.worker_address;
                 let worker_endpoint = "http://".to_string() + &worker_address;
                 let jwt_token = response.jwt_token;
+                tracing::debug!(job_id = %job_id, worker = %worker_address, "worker assigned, connecting");
+
                 if state_tx.send(JobState::Executing).is_err() {
                     return; // no listening RunningJob's, so no point running the task
                 };
-                
+
                 let channel = match Channel::from_shared(worker_endpoint.to_string()) {
                     Ok(endpoint) => {
                         match endpoint.connect().await {
@@ -94,15 +107,18 @@ impl Client {
                 };
                 let mut executor_client = ExecutorClient::with_interceptor(channel, WorkerJwtInterceptor { jwt_token });
 
-                let job_request = Request::new(JobRequest { 
-                    job_id: job_id_bytes, 
-                    wasm_bytes: job.wasm_bytes, 
-                    args: job.args 
+                let job_request = Request::new(JobRequest {
+                    job_id: job_id_bytes,
+                    wasm_bytes: job.wasm_bytes,
+                    args: job.args
                 });
+
+                tracing::debug!(job_id = %job_id, "execute_job sent to worker");
 
                 let execution_result = tokio::select! {
                     r = executor_client.execute_job(job_request) => r,
                     _ = cancel_token.cancelled() => {
+                        tracing::debug!(job_id = %job_id, "cancel fired, sending cancel_running_job");
                         client.cancel_running_job(job_id, executor_client).await;
                         state_tx.send(JobState::Cancelled).ok();
                         return;
@@ -126,6 +142,7 @@ impl Client {
             tokio::select! {
                 _ = &mut submit_task => {},
                 _ = tokio::time::sleep(timeout) => {
+                    tracing::debug!(job_id = %job_id, "timeout fired, cancelling job");
                     cancel_token_timeout.cancel();
                     submit_task.await.ok(); // wait for submit_task cleanup
                     state_tx_timeout.send(JobState::Cancelled).ok();
@@ -139,23 +156,27 @@ impl Client {
         }
     }
     
-    // TODO: maybe add debug logs (so they only show up if tracing level is very high)
-    // if cancel_request return an error? Note that this doesn't mean something went wrong,
-    // it's just the result of a network race. The job will be cancelled on the client side
-    // by the cancellation token
     /// Send a cancellation request to the Orchestrator to remove a queued job.
     pub(crate) async fn cancel_queued_job(&self, job_id: Uuid) {
-        self.orchestrator_client.clone()
-            .cancel_job(CancelJobRequest { 
+        if let Err(e) = self.orchestrator_client.clone()
+            .cancel_job(CancelJobRequest {
                 job_id: job_id.as_bytes().to_vec()
-            }).await.ok();
+            }).await
+        {
+            // Not an error, a network race where the job was already dispatched is expected.
+            tracing::debug!(job_id = %job_id, error = %e, "cancel_queued_job failed (likely a race, job may have already been dispatched)");
+        }
     }
 
     /// Send a cancellation request to the worker currently executing a job.
     pub(crate) async fn cancel_running_job(&self, job_id: Uuid, mut executor_client: ExecutorClient<InterceptedService<Channel, WorkerJwtInterceptor>>) {
-        executor_client.cancel_job(CancelJobRequest {
+        if let Err(e) = executor_client.cancel_job(CancelJobRequest {
             job_id: job_id.as_bytes().to_vec()
-        }).await.ok();
+        }).await
+        {
+            // Not an error, the worker may have already finished the job.
+            tracing::debug!(job_id = %job_id, error = %e, "cancel_running_job failed (likely a race, job may have already completed)");
+        }
     }
 }
 

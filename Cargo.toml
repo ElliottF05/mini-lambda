@@ -25,3 +25,5 @@ uuid = { version = "1", features = ["v4", "serde"] }
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 rand = { version = "0.10" }
 serde = { version = "1", features = ["derive"]}
+tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
