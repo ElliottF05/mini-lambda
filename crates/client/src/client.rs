@@ -150,7 +150,7 @@ impl Client {
             };
         });
 
-        return RunningJob {
+        RunningJob {
             state_rx,
             cancel_token: cancel_token_handle,
         }

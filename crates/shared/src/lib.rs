@@ -14,8 +14,6 @@ pub mod executor {
     tonic::include_proto!("executor");
 }
 
-use std::usize;
-
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
