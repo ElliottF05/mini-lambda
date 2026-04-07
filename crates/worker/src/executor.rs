@@ -8,7 +8,7 @@ use tonic::{Request, Status, Response};
 use uuid::Uuid;
 
 use shared::executor_server::Executor;
-use shared::{CancelJobRequest, CancelJobResponse, JobClaims, JobRequest, JobResponse, JobState, JobUpdate, WorkerMessage, worker_message};
+use shared::{CancelJobRequest, CancelJobResponse, JobClaims, JobRequest, JobResponse, JobState};
 
 use wasmtime::Store;
 use wasmtime::component::{Component, ResourceTable};
@@ -106,7 +106,6 @@ impl Executor for Worker {
             })
             .await?;
 
-            // TODO: check if i should move this down slightly
             Worker::send_job_update_to_orchestrator(worker.clone().orchestrator_tx, job_id, JobState::Executing);
 
             let stdout_pipe = MemoryOutputPipe::new(10 * 1024 * 1024); // 10 MB

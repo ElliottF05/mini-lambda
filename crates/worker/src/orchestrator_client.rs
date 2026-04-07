@@ -96,11 +96,10 @@ impl Worker {
         }
     }
 
-    // TODO: add brief documentation string. This should note that this is fire-and-forget
-    // and spawns a task
+    /// Sends a job state update to the orchestrator over the worker's outbound stream.
+    /// Note, this is fire-and-forget; it spawns a task and returns immediately.
     pub fn send_job_update_to_orchestrator(orchestrator_tx: Sender<WorkerMessage>, job_id: Uuid, job_state: JobState) {
         tokio::spawn(async move {
-            // TODO: should i handle error here?
             _ = orchestrator_tx.send(WorkerMessage {
                 message: Some(worker_message::Message::JobUpdate(JobUpdate { 
                     job_id: job_id.as_bytes().to_vec(), state: job_state.into() 

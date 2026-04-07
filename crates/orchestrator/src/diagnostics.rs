@@ -4,10 +4,12 @@ use dashmap::DashMap;
 use shared::JobUpdate;
 use uuid::Uuid;
 
-// TODO: add simple triple slash docs for all structs, enums, and function in this file.
-
 // TODO: add eviction policy so that only 1000 inactive jobs are held,
 // this can also apply to 1000 old workers and clients
+
+/// Observational store for job, client, and worker state, used to drive the TUI.
+/// Updated as a side effect of orchestrator events — has no effect on job routing correctness.
+/// All methods are infallible: missing entries log a warning and return rather than crashing.
 #[derive(Debug, Clone, Default)]
 pub struct DiagnosticsStore {
     pub jobs: DashMap<Uuid, JobInfo>,
@@ -16,6 +18,8 @@ pub struct DiagnosticsStore {
 }
 
 impl DiagnosticsStore {
+    /// Updates job, client, and worker diagnostics in response to a state transition reported
+    /// by a worker.
     pub fn handle_worker_job_update(&self, worker_address: &str, job_update: &JobUpdate) {
         let job_id = Uuid::from_slice(&job_update.job_id)
             .unwrap_or_else(|e| {
@@ -24,7 +28,6 @@ impl DiagnosticsStore {
             });
 
         let Some(mut job_info) = self.jobs.get_mut(&job_id) else {
-            // TODO: after eviction is added, None here is expected for evicted jobs — return early instead
             tracing::warn!(job_id = %job_id, "job not found in diagnostics store during job update");
             return;
         };
@@ -70,6 +73,8 @@ impl DiagnosticsStore {
         job_info.state = received_state;
     }
 
+    /// Records a client connection, or no-ops if the address is already known 
+    /// (client already connected).
     pub fn handle_client_connected(&self, client_address: &str) {
         let now = SystemTime::now();
         self.clients.entry(client_address.to_string()).or_insert(ClientInfo {
@@ -82,6 +87,7 @@ impl DiagnosticsStore {
         });
     }
 
+    /// Records a new job entering the queue and increments the submitting client's job count.
     pub fn handle_job_enqueue(&self, job_id: Uuid, client_address: &str) {
         let job_info = JobInfo {
             job_id,
@@ -103,6 +109,7 @@ impl DiagnosticsStore {
         client_info.jobs_submitted += 1;
     }
 
+    /// Marks a queued job as cancelled and accumulates its queue time on the client.
     pub fn handle_cancel_queued_job(&self, job_id: Uuid) {
         let Some(mut job_info) = self.jobs.get_mut(&job_id) else {
             tracing::warn!(job_id = %job_id, "job not found in diagnostics store during queued cancel");
@@ -122,6 +129,7 @@ impl DiagnosticsStore {
         client_info.last_seen_at = now;
     }
 
+    /// Marks a job as dispatched to a worker and finalizes its queue time on the client.
     pub fn handle_dispatch_job(&self, job_id: Uuid, worker_address: &str) {
         let Some(mut job_info) = self.jobs.get_mut(&job_id) else {
             tracing::warn!(job_id = %job_id, "job not found in diagnostics store during dispatch");
@@ -138,6 +146,7 @@ impl DiagnosticsStore {
         client_info.total_queue_time += now.duration_since(job_info.queued_at).unwrap_or_default();
     }
 
+    /// Records a new worker connection.
     pub fn handle_worker_connected(&self, worker_address: &str) {
         self.workers.insert(worker_address.to_string(), WorkerInfo {
             address: worker_address.to_string(),
@@ -148,6 +157,7 @@ impl DiagnosticsStore {
         });
     }
 
+    /// Records the time a worker disconnected.
     pub fn handle_worker_disconnected(&self, worker_address: &str) {
         let Some(mut worker_info) = self.workers.get_mut(worker_address) else {
             tracing::warn!(worker = %worker_address, "worker not found in diagnostics store during disconnect");
@@ -157,6 +167,7 @@ impl DiagnosticsStore {
     }
 }
 
+/// The lifecycle state of a job, ordered from earliest to latest.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum JobState {
     Queued,
@@ -184,6 +195,7 @@ impl From<shared::JobState> for JobState {
     }
 }
 
+/// Diagnostic snapshot of a single job's lifecycle.
 #[derive(Debug, Clone)]
 pub struct JobInfo {
     pub job_id: Uuid,
@@ -196,6 +208,7 @@ pub struct JobInfo {
     pub completed_at: Option<SystemTime>
 }
 
+/// Diagnostic snapshot of a connected client.
 #[derive(Debug, Clone)]
 pub struct ClientInfo {
     pub address: String,
@@ -206,6 +219,7 @@ pub struct ClientInfo {
     pub last_seen_at: SystemTime
 }
 
+/// Diagnostic snapshot of a connected worker.
 #[derive(Debug, Clone)]
 pub struct WorkerInfo {
     pub address: String,
