@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use crate::{job_queue::JobQueue, registry::WorkerRegistry};
+use crate::{diagnostics::DiagnosticsStore, job_queue::JobQueue, registry::WorkerRegistry};
 
 /// Orchestrator struct representing the main Orchestrator server component.
 /// It implements CliApi and WorkerApi services, see cli_api.rs and worker_api.rs for details.
@@ -15,6 +15,9 @@ pub struct Orchestrator {
     pub worker_password: Option<String>,
     pub client_password: Option<String>,
     pub jwt_secret: [u8; 32],
+
+    // diagnostics
+    pub diagnostics: Arc<DiagnosticsStore>,
 }
 
 impl Orchestrator {
@@ -26,6 +29,7 @@ impl Orchestrator {
             worker_password,
             client_password,
             jwt_secret: rand::random(),
+            diagnostics: Arc::new(DiagnosticsStore::default()),
         }
     }
 }

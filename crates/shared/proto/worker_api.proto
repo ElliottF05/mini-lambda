@@ -15,6 +15,7 @@ message WorkerMessage {
     oneof message {
         WorkerRegistration registration = 1;
         CreditUpdate credit_update = 2;
+        JobUpdate job_update = 3;
     }
 }
 
@@ -29,6 +30,21 @@ message CreditUpdate {
     uint32 delta = 1;
 }
 
+// TODO: documentation string here
+enum JobState {
+    JOB_STATE_UNSPECIFIED = 0;
+    JOB_STATE_COMPILING = 1;
+    JOB_STATE_EXECUTING = 2;
+    JOB_STATE_COMPLETED = 3;
+    JOB_STATE_FAILED = 4;
+    JOB_STATE_CANCELLED = 5;
+}
+
+// TODO: documentation string here
+message JobUpdate {
+    bytes job_id = 1;
+    JobState state = 2;
+}
 
 
 // Messages sent by the Orchestrator to the Worker.

@@ -1824,6 +1824,7 @@ name = "orchestrator"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "dashmap",
  "hashlink",
  "jsonwebtoken",
  "priority-queue",

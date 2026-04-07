@@ -1,10 +1,11 @@
-use shared::{OrchestratorMessage, WorkerRegistration, orchestrator_message, worker_api_client::WorkerApiClient, worker_message};
+use shared::{JobState, JobUpdate, OrchestratorMessage, WorkerRegistration, orchestrator_message, worker_api_client::WorkerApiClient, worker_message};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Status, Streaming, transport::Channel};
 
 use shared::{WorkerMessage};
+use uuid::Uuid;
 
 use crate::worker::Worker;
 
@@ -93,5 +94,18 @@ impl Worker {
                 std::process::exit(1);
             }
         }
+    }
+
+    // TODO: add brief documentation string. This should note that this is fire-and-forget
+    // and spawns a task
+    pub fn send_job_update_to_orchestrator(orchestrator_tx: Sender<WorkerMessage>, job_id: Uuid, job_state: JobState) {
+        tokio::spawn(async move {
+            // TODO: should i handle error here?
+            _ = orchestrator_tx.send(WorkerMessage {
+                message: Some(worker_message::Message::JobUpdate(JobUpdate { 
+                    job_id: job_id.as_bytes().to_vec(), state: job_state.into() 
+                }))
+            }).await;
+        });
     }
 }

@@ -3,7 +3,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Status, Response, Streaming};
 
-use shared::{CreditUpdate, JobClaims, OrchestratorMessage, RegistrationAck, WorkerMessage, WorkerResponse, orchestrator_message, worker_message};
+use shared::{CreditUpdate, JobClaims, JobUpdate, OrchestratorMessage, RegistrationAck, WorkerMessage, WorkerResponse, orchestrator_message, worker_message};
 use shared::worker_api_server::WorkerApi;
 
 use crate::job_queue::JobQueue;
@@ -53,7 +53,9 @@ impl WorkerApi for Orchestrator {
                 }
             };
 
+            orchestrator.diagnostics.handle_worker_connected(&worker_address);
             tracing::info!(worker = %worker_address, "worker registered");
+
             loop {
                 match inbound.message().await {
                     Ok(Some(worker_message)) => {
@@ -65,6 +67,9 @@ impl WorkerApi for Orchestrator {
                                 tracing::error!(worker = %worker_address, "ERROR: worker sent a second registration after already registering, this should never happen");
                                 std::process::exit(1);
                             },
+                            Some(worker_message::Message::JobUpdate(job_update)) => {
+                                orchestrator.handle_job_update(&worker_address, &job_update);
+                            }
                             None => {
                                 tracing::error!(worker = %worker_address, "ERROR: worker sent a message with no content, this should never happen");
                                 std::process::exit(1);
@@ -81,6 +86,7 @@ impl WorkerApi for Orchestrator {
                     }
                 }
             }
+            orchestrator.diagnostics.handle_worker_disconnected(&worker_address);
             orchestrator.registry.lock().await.deregister_worker(&worker_address);
         });
 
@@ -129,6 +135,10 @@ impl Orchestrator {
 
         registry.update_credits(worker_address, credit_update.delta);
         Self::dispatch_pending_jobs(&mut queue, &mut registry, &self.jwt_secret);
+    }
+
+    fn handle_job_update(&self, worker_address: &str, job_update: &JobUpdate) {
+        self.diagnostics.handle_worker_job_update(worker_address, job_update);
     }
 
     /// Dispatches as many pending jobs as possible to available workers, consuming one registry

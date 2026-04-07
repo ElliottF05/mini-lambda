@@ -8,7 +8,7 @@ use tonic::{Request, Status, Response};
 use uuid::Uuid;
 
 use shared::executor_server::Executor;
-use shared::{CancelJobRequest, CancelJobResponse, JobClaims, JobRequest, JobResponse};
+use shared::{CancelJobRequest, CancelJobResponse, JobClaims, JobRequest, JobResponse, JobState, JobUpdate, WorkerMessage, worker_message};
 
 use wasmtime::Store;
 use wasmtime::component::{Component, ResourceTable};
@@ -77,7 +77,7 @@ impl Executor for Worker {
 
         let worker = self.clone();
         let execute_task = tokio::spawn(async move {
-            let _job_guard = JobGuard::new(
+            let mut job_guard = JobGuard::new(
                 worker.orchestrator_tx.clone(), 
                 worker.cancellation_tokens.clone(),
                 job_id
@@ -93,6 +93,7 @@ impl Executor for Worker {
             tracing::debug!(job_id = %job_id, cached, "compiling wasm");
             let component = cell.get_or_try_init(|| async {
                 let engine = worker.wasm_engine.clone();
+                Worker::send_job_update_to_orchestrator(worker.clone().orchestrator_tx, job_id, JobState::Compiling);
                 tokio::task::spawn_blocking(move || {
                     Component::from_binary(&engine, &wasm_bytes)
                         .map_err(ExecutorError::CompilationFailed)
@@ -104,6 +105,9 @@ impl Executor for Worker {
                 })
             })
             .await?;
+
+            // TODO: check if i should move this down slightly
+            Worker::send_job_update_to_orchestrator(worker.clone().orchestrator_tx, job_id, JobState::Executing);
 
             let stdout_pipe = MemoryOutputPipe::new(10 * 1024 * 1024); // 10 MB
             let stderr_pipe = MemoryOutputPipe::new(10 * 1024 * 1024); // 10 MB
@@ -128,6 +132,7 @@ impl Executor for Worker {
                 result = command.wasi_cli_run().call_run(&mut store) => result,
                 _ = cancellation_token.cancelled() => {
                     tracing::info!(job_id = %job_id, "job cancelled");
+                    job_guard.set_cancelled();
                     return Err(ExecutorError::JobCancelled.into())
                 }
             };
@@ -138,13 +143,17 @@ impl Executor for Worker {
             match run_result {
                 Ok(Ok(())) => {
                     tracing::info!(job_id = %job_id, "job completed successfully");
+                    job_guard.set_completed();
                     Ok(Response::new(JobResponse { stdout, stderr }))
                 },
                 Ok(Err(())) => Err(ExecutorError::ExecutionFailed(format!("stderr: {}", String::from_utf8_lossy(&stderr))).into()),
                 Err(e) => {
                     if let Some(exit) = e.downcast_ref::<wasmtime_wasi::I32Exit>() {
                         match exit.0 {
-                            0 => Ok(Response::new(JobResponse { stdout, stderr })),
+                            0 => {
+                                job_guard.set_completed();
+                                Ok(Response::new(JobResponse { stdout, stderr }))
+                            },
                             code => Err(ExecutorError::ExecutionFailed(format!("exited with code {code}, stderr: {}: {}", code, String::from_utf8_lossy(&stderr))).into()),
                         }
                     } else {

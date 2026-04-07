@@ -17,3 +17,4 @@ rand = {workspace = true }
 jsonwebtoken = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+dashmap = { workspace = true }

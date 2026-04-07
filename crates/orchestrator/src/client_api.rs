@@ -19,6 +19,15 @@ impl ClientApi for Orchestrator {
         request: Request<WorkerRequest>
     ) -> Result<Response<WorkerResponse>, Status> {
 
+        // Get client address
+        let client_address = request.remote_addr()
+            .unwrap_or_else(|| {
+                tracing::error!("ERROR: couldn't read client address, this should never occur");
+                std::process::exit(1);
+            })
+            .to_string();
+        self.diagnostics.handle_client_connected(&client_address);
+
         // Create the pending job
         let job_id = Uuid::from_slice(&request.into_inner().job_id)
             .unwrap_or_else(|e| {
@@ -37,6 +46,8 @@ impl ClientApi for Orchestrator {
             let mut queue = self.job_queue.lock().await;
             let mut registry = self.registry.lock().await;
 
+            self.diagnostics.handle_job_enqueue(job_id, &client_address);
+
             queue.enqueue(job_id, tx);
             Self::dispatch_pending_jobs(&mut queue, &mut registry, &self.jwt_secret);
         }
@@ -45,6 +56,7 @@ impl ClientApi for Orchestrator {
         match rx.await {
             Ok(response) => {
                 tracing::info!(job_id = %job_id, worker = %response.worker_address, "worker assigned");
+                self.diagnostics.handle_dispatch_job(job_id, &response.worker_address);
                 Ok(Response::new(response))
             },
             Err(_) => Err(OrchestratorError::JobCancelled.into())
@@ -67,6 +79,7 @@ impl ClientApi for Orchestrator {
 
         if self.job_queue.lock().await.cancel(&job_id) {
             tracing::debug!(job_id = %job_id, "job cancelled from queue");
+            self.diagnostics.handle_cancel_queued_job(job_id);
             Ok(Response::new(CancelJobResponse {}))
         } else {
             tracing::debug!(job_id = %job_id, "cancel requested but job not in queue (may have been dispatched)");

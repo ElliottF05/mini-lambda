@@ -14,7 +14,7 @@ clap = { workspace = true }
 uuid = { workspace = true }
 wasmtime = { version = "43.0" }
 wasmtime-wasi = { version = "43.0" }
-dashmap = { version = "6.1" }
+dashmap = { workspace = true}
 blake3 = {version = "1.8" }
 lru = { version = "0.16" }
 jsonwebtoken = { workspace = true }
