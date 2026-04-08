@@ -40,6 +40,15 @@ The client sends a job request to the orchestrator, which queues it until a work
 
 ---
 
+## Tech stack
+
+- **[Wasmtime](https://wasmtime.dev/)** — WebAssembly runtime; executes WASM components with WASI Preview 2
+- **[Tonic](https://github.com/hyperium/tonic) + Prost** — gRPC and Protocol Buffers for all inter-component communication
+- **[Tokio](https://tokio.rs/)** — async runtime powering the orchestrator, worker, and client
+- **[ratatui](https://ratatui.rs/) + crossterm** — terminal UI for the orchestrator dashboard
+
+---
+
 ## Quickstart
 
 **Prerequisites:** Rust toolchain (`rustup`).
