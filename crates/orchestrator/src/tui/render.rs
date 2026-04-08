@@ -607,7 +607,8 @@ fn state_str(state: &JobState) -> &'static str {
 fn state_style(state: &JobState) -> Style {
     match state {
         JobState::Queued | JobState::Dispatched => Style::default().fg(WARN),
-        JobState::Compiling | JobState::Executing => Style::default().fg(ACCENT),
+        JobState::Compiling  => Style::default().fg(Color::Blue),
+        JobState::Executing  => Style::default().fg(ACCENT),
         JobState::Completed => Style::default().fg(SUCCESS),
         JobState::Failed => Style::default().fg(ERR),
         JobState::Cancelled => Style::default().fg(CANCEL),
