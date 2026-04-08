@@ -56,10 +56,41 @@ The client sends a job request to the orchestrator, which queues it until a work
 
 3. **Submit a job:**
    ```bash
-   cargo run -p client -- crates/client/test-wasm/test-wasm.wasm
+   cargo run -p client --bin=cli -- crates/client/test-wasm/fib.wasm 25
    ```
 
 Workers register with the orchestrator and accept jobs from clients directly. Running locally with `127.0.0.1` works fine; for distributed deployments, use publicly reachable IPs or hostnames for both the orchestrator and each worker.
+
+---
+
+## Examples
+
+### Test modules
+
+Three pre-built WASM modules are included in `crates/client/test-wasm/`:
+
+- **`fib.wasm`** — computes Fibonacci numbers. Takes a single integer argument.
+  ```bash
+  cargo run -p client --bin=cli -- crates/client/test-wasm/fib.wasm 25
+  ```
+
+- **`sleep.wasm`** — sleeps for *n* seconds, then exits. Useful for watching job state transitions in the TUI.
+  ```bash
+  cargo run -p client --bin=cli -- crates/client/test-wasm/sleep.wasm 5
+  ```
+
+- **`http.wasm`** — makes a GET request to `httpbin.org`. Requires the orchestrator to be started with `--network-access-allowed`.
+  ```bash
+  cargo run -p client --bin=cli -- crates/client/test-wasm/http.wasm
+  ```
+
+### Rust client API
+
+`crates/client/src/bin/example.rs` demonstrates the client library, spinning up multiple concurrent client connections each submitting a stream of jobs. Run it against a live orchestrator:
+
+```bash
+cargo run -p client --bin=example
+```
 
 ---
 
