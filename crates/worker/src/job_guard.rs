@@ -31,7 +31,7 @@ impl JobGuard {
         self.state = Some(JobState::Completed)
     }
     pub fn set_cancelled(&mut self) {
-        self.state = Some(JobState::Cancelled)
+        self.state = None
     }
 }
 

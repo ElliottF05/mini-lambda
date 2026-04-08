@@ -181,6 +181,9 @@ impl Executor for Worker {
 
         // Check authentication
         self.check_client_auth(&metadata, job_id)?;
+
+        // Send job update to orchestrator
+        Worker::send_job_update_to_orchestrator(self.orchestrator_tx.clone(), job_id, JobState::Cancelled);
         
         // Cancel the job via the cancellation token
         match self.cancellation_tokens.get(&job_id) {
