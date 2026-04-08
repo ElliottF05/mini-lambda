@@ -17,14 +17,14 @@ async fn main() {
 
     // Configure the number of clients and their job submission patterns here.
     let num_clients = 6; // should be >= 1
-    let total_jobs_per_client = 20;
+    let total_jobs_per_client = 10;
     let concurrent_jobs_per_client = 2; // should be less that total_jobs_per_client
-    let cached_probability = 0.2; // should be in [0,1]
+    let cached_probability = 0.5; // should be in [0,1]
 
     // Configure job details
-    let sleep_range = 0..5;
-    let timeout_range = 1..12;
-    let job_failure_probability = 0.15;
+    let sleep_range = 0..4;
+    let timeout_range = 1..8;
+    let job_failure_probability = 0.2;
 
     // Create the clients and submit the jobs
     let mut join_handles = JoinSet::new();
