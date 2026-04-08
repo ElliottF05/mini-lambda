@@ -46,12 +46,12 @@ The client sends a job request to the orchestrator, which queues it until a work
 
 1. **Start the orchestrator:**
    ```bash
-   cargo run -p orchestrator -- 127.0.0.1:50051
+   cargo run -p orchestrator -- 127.0.0.1:50051 --tui
    ```
 
 2. **Start one or more workers** (each needs a bind host and an initial credit count):
    ```bash
-   cargo run -p worker -- 127.0.0.1 100
+   cargo run -p worker -- 127.0.0.1 4
    ```
 
 3. **Submit a job:**
@@ -72,6 +72,7 @@ Workers register with the orchestrator and accept jobs from clients directly. Ru
 | `addr` (positional) | `127.0.0.1:50051` | Address and port to bind to |
 | `--worker-password` | none | Password workers must supply to register |
 | `--client-password` | none | Password clients must supply to submit jobs |
+| `--network-access-allowed` | off | Permit jobs to make network connections |
 | `--tui` | off | Launch the interactive TUI dashboard |
 | `--verbose` | off | Enable debug logging |
 

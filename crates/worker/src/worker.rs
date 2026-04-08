@@ -36,6 +36,7 @@ pub struct Worker {
 
     // Fields relating to both
     pub jwt_secret: Arc<OnceLock<[u8; 32]>>,
+    pub network_access_allowed: Arc<OnceLock<bool>>,
 }
 
 impl Worker {
@@ -72,6 +73,7 @@ impl Worker {
             orchestrator_tx,
             component_cache: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(64).unwrap()))),
             jwt_secret: Arc::new(OnceLock::new()),
+            network_access_allowed: Arc::new(OnceLock::new())
         };
 
         // Begin the bidirectional communication session with the Orchestrator

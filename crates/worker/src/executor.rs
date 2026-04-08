@@ -111,11 +111,19 @@ impl Executor for Worker {
             let stdout_pipe = MemoryOutputPipe::new(10 * 1024 * 1024); // 10 MB
             let stderr_pipe = MemoryOutputPipe::new(10 * 1024 * 1024); // 10 MB
 
-            let wasi_ctx = WasiCtx::builder()
+            let mut wasi_ctx_builder = WasiCtx::builder();
+            wasi_ctx_builder
                 .args(&wasi_args)
                 .stdout(stdout_pipe.clone())
-                .stderr(stderr_pipe.clone())
-                .build();
+                .stderr(stderr_pipe.clone());
+
+            if worker.network_access_allowed.get().copied().unwrap_or(false) {
+                wasi_ctx_builder
+                    .allow_ip_name_lookup(true)
+                    .inherit_network();
+            }
+
+            let wasi_ctx = wasi_ctx_builder.build();
 
             // TODO: add env and file system
             let state = ComponentRunStates::new(wasi_ctx);

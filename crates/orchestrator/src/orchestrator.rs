@@ -15,6 +15,7 @@ pub struct Orchestrator {
     pub worker_password: Option<String>,
     pub client_password: Option<String>,
     pub jwt_secret: [u8; 32],
+    pub network_access_allowed: bool,
 
     // diagnostics
     pub diagnostics: Arc<DiagnosticsStore>,
@@ -22,7 +23,7 @@ pub struct Orchestrator {
 
 impl Orchestrator {
     /// Creates a new Orchestrator instance
-    pub fn new(worker_password: Option<String>, client_password: Option<String>) -> Self {
+    pub fn new(worker_password: Option<String>, client_password: Option<String>, network_access_allowed: bool) -> Self {
         Self {
             registry: Arc::new(Mutex::new(WorkerRegistry::new())),
             job_queue: Arc::new(Mutex::new(JobQueue::new())),
@@ -30,6 +31,7 @@ impl Orchestrator {
             client_password,
             jwt_secret: rand::random(),
             diagnostics: Arc::new(DiagnosticsStore::new()),
+            network_access_allowed
         }
     }
 }

@@ -57,4 +57,5 @@ message OrchestratorMessage {
 // Registration acknowledgment message sent by the Orchestrator.
 message RegistrationAck {
     bytes jwt_secret = 1;
+    bool network_access_allowed = 2;
 }

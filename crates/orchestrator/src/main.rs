@@ -24,10 +24,12 @@ struct Args {
     worker_password: Option<String>,
     #[arg(long, help = "Password required for clients to submit jobs. If not set, no password is required.")]
     client_password: Option<String>,
-    #[arg(long, help = "Enable debug logging")]
-    verbose: bool,
+    #[arg(long, help = "Permit jobs to make network connections")]
+    network_access_allowed: bool,
     #[arg(long, help = "Launch the interactive TUI dashboard")]
     tui: bool,
+    #[arg(long, help = "Enable debug logging")]
+    verbose: bool,
 }
 
 fn init_tracing_plain(verbose: bool) {
@@ -66,7 +68,7 @@ pub async fn main() {
     let args = Args::parse();
 
     let addr = args.addr;
-    let orchestrator = Orchestrator::new(args.worker_password, args.client_password);
+    let orchestrator = Orchestrator::new(args.worker_password, args.client_password, args.network_access_allowed);
 
     let client_server = ClientApiServer::with_interceptor(orchestrator.clone(), check_client_auth(orchestrator.clone()));
     let worker_server = WorkerApiServer::with_interceptor(orchestrator.clone(), check_worker_auth(orchestrator.clone()));

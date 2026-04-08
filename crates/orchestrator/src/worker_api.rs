@@ -113,7 +113,7 @@ impl Orchestrator {
         // Send registration ack back to worker
         let ack = OrchestratorMessage {
             message: Some(orchestrator_message::Message::RegistrationAck(
-                RegistrationAck { jwt_secret: self.jwt_secret.to_vec() }
+                RegistrationAck { jwt_secret: self.jwt_secret.to_vec(), network_access_allowed: self.network_access_allowed }
             ))
         };
         if tx.send(Ok(ack)).await.is_err() {

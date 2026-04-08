@@ -51,14 +51,16 @@ impl Worker {
             message: Some(worker_message::Message::Registration(WorkerRegistration { address, credits }))
         }).await.unwrap_or_else(|e| panic!("Channel to Orchestrator should be working for initial registration, got error {}", e));
         
-        let jwt_secret = match inbound.message().await {
+        let (jwt_secret, network_access_allowed) = match inbound.message().await {
             Ok(Some(OrchestratorMessage { message: Some(orchestrator_message::Message::RegistrationAck(ack)) })) => {
-                ack.jwt_secret.try_into()
-                    .unwrap_or_else(|e| panic!("received malformed jwt secret: {:?}", e))
+                let jwt_secret = ack.jwt_secret.try_into()
+                    .unwrap_or_else(|e| panic!("received malformed jwt secret: {:?}", e));
+                (jwt_secret, ack.network_access_allowed)
             },
             msg => panic!("expected registration ack as first message, got: {:?}", msg)
         };
         self.jwt_secret.set(jwt_secret).ok();
+        self.network_access_allowed.set(network_access_allowed).ok();
 
         tracing::info!(address = %self.addr, credits = credits, "registered with orchestrator");
 
