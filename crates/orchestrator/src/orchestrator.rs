@@ -29,7 +29,7 @@ impl Orchestrator {
             worker_password,
             client_password,
             jwt_secret: rand::random(),
-            diagnostics: Arc::new(DiagnosticsStore::default()),
+            diagnostics: Arc::new(DiagnosticsStore::new()),
         }
     }
 }

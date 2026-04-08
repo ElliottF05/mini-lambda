@@ -10,11 +10,23 @@ use uuid::Uuid;
 /// Observational store for job, client, and worker state, used to drive the TUI.
 /// Updated as a side effect of orchestrator events — has no effect on job routing correctness.
 /// All methods are infallible: missing entries log a warning and return rather than crashing.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct DiagnosticsStore {
+    pub started_at: SystemTime,
     pub jobs: DashMap<Uuid, JobInfo>,
     pub clients: DashMap<String, ClientInfo>,
     pub workers: DashMap<String, WorkerInfo>,
+}
+
+impl DiagnosticsStore {
+    pub fn new() -> Self {
+        Self {
+            started_at: SystemTime::now(),
+            jobs: DashMap::new(),
+            clients: DashMap::new(),
+            workers: DashMap::new()
+        }
+    }
 }
 
 impl DiagnosticsStore {
