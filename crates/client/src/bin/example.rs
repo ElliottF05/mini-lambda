@@ -15,9 +15,9 @@ async fn main() {
     let password = "password".to_string();
 
     // Configure the number of clients and their job submission patterns here.
-    let num_clients = 1; // should be >= 1
-    let total_jobs_per_client = 100;
-    let concurrent_jobs_per_client = 12; // should be less that total_jobs_per_client
+    let num_clients = 6; // should be >= 1
+    let total_jobs_per_client = 20;
+    let concurrent_jobs_per_client = 2; // should be less that total_jobs_per_client
     let cached_probability = 0.2; // should be in [0,1]
 
     // Configure job details
@@ -56,10 +56,10 @@ async fn main() {
                 }
             }
         }));
+    }
 
-        while let Some(result) = join_handles.join_next().await {
-            _ = result.unwrap_or_else(|e| panic!("client task panicked: {}", e));
-        }
+    while let Some(result) = join_handles.join_next().await {
+        _ = result.unwrap_or_else(|e| panic!("client task panicked: {}", e));
     }
 }
 
