@@ -238,8 +238,8 @@ fn draw_jobs(frame: &mut Frame, area: Rect, state: &mut TuiState, diagnostics: &
             Constraint::Min(14),
             Constraint::Min(14),
             Constraint::Length(11),
-            Constraint::Length(11),
-            Constraint::Length(9),
+            Constraint::Length(12),
+            Constraint::Length(10),
             Constraint::Length(10),
         ],
     )

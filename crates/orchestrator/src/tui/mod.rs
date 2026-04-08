@@ -1,3 +1,7 @@
+// NOTE: this tui crate was my first true time using Claude Code for a contained feature.
+// The rest of the code was almost all written by me, with AI assistance primarily being
+// used to bounce ideas off of and help with some debugging.
+
 mod render;
 pub mod state;
 
