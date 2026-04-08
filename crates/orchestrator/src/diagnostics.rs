@@ -12,6 +12,7 @@ use uuid::Uuid;
 /// All methods are infallible: missing entries log a warning and return rather than crashing.
 #[derive(Debug, Clone)]
 pub struct DiagnosticsStore {
+    /// When the orchestrator started, used for uptime display.
     pub started_at: SystemTime,
     pub jobs: DashMap<Uuid, JobInfo>,
     pub clients: DashMap<String, ClientInfo>,
