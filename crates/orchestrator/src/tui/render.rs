@@ -82,7 +82,9 @@ fn draw_orchestrator_stats(frame: &mut Frame, area: Rect, diagnostics: &Diagnost
     let uptime = now.duration_since(diagnostics.started_at).unwrap_or_default();
 
     let mut queued = 0u32;
-    let mut active = 0u32;
+    let mut dispatched = 0u32;
+    let mut compiling = 0u32;
+    let mut executing = 0u32;
     let mut completed = 0u32;
     let mut failed = 0u32;
     let mut cancelled = 0u32;
@@ -90,37 +92,62 @@ fn draw_orchestrator_stats(frame: &mut Frame, area: Rect, diagnostics: &Diagnost
 
     for entry in diagnostics.jobs.iter() {
         match entry.state {
-            JobState::Queued => queued += 1,
-            JobState::Dispatched | JobState::Compiling | JobState::Executing => active += 1,
-            JobState::Completed => completed += 1,
-            JobState::Failed => failed += 1,
-            JobState::Cancelled => cancelled += 1,
+            JobState::Queued      => queued += 1,
+            JobState::Dispatched  => dispatched += 1,
+            JobState::Compiling   => compiling += 1,
+            JobState::Executing   => executing += 1,
+            JobState::Completed   => completed += 1,
+            JobState::Failed      => failed += 1,
+            JobState::Cancelled   => cancelled += 1,
         }
     }
+
+    let active   = dispatched + compiling + executing;
+    let terminal = completed + failed + cancelled;
 
     let connected_workers = diagnostics.workers.iter()
         .filter(|w| w.disconnected_at.is_none())
         .count();
 
+    let dim = Style::default().fg(DIM);
+
     let stat = |label: &'static str, value: String, style: Style| -> Line<'static> {
         Line::from(vec![
-            Span::styled(format!("{:<11}", label), Style::default().fg(DIM)),
-            Span::styled(value, style),
+            Span::styled(format!("{:<11}", label), dim),
+            Span::styled(format!("{:>4}", value), style),
         ])
     };
 
-    let lines = vec![
-        stat("Uptime",    fmt_duration(uptime),           Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-        stat("Workers",   connected_workers.to_string(),  Style::default().add_modifier(Modifier::BOLD)),
-        stat("Total jobs", total.to_string(),             Style::default().add_modifier(Modifier::BOLD)),
-        Line::from(Span::styled("─".repeat(20), Style::default().fg(DIM))),
-        stat("Queued",    queued.to_string(),             Style::default().fg(WARN)),
-        stat("Active",    active.to_string(),             Style::default().fg(ACCENT)),
-        stat("Done",      completed.to_string(),          Style::default().fg(SUCCESS)),
-        stat("Failed",    failed.to_string(),             Style::default().fg(ERR)),
-        stat("Cancelled", cancelled.to_string(),          Style::default().fg(CANCEL)),
-    ];
+    // Row with a bracket character on the right; middle row shows the group sum.
+    let brow = |label: &'static str, value: String, style: Style,
+                bchar: &'static str, sum: Option<(String, Style)>| -> Line<'static> {
+        let mut spans = vec![
+            Span::styled(format!("{:<11}", label), dim),
+            Span::styled(format!("{:>4}", value), style),
+            Span::styled(format!(" {bchar}"), dim),
+        ];
+        if let Some((s, ss)) = sum {
+            spans.push(Span::styled(format!(" {s}"), ss));
+        }
+        Line::from(spans)
+    };
 
+    let active_sum_s   = Style::default().fg(ACCENT).add_modifier(Modifier::BOLD);
+    let terminal_sum_s = Style::default().add_modifier(Modifier::BOLD);
+
+    let lines: Vec<Line> = vec![
+        stat("Uptime",     fmt_duration(uptime),           Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+        stat("Workers",    connected_workers.to_string(),  Style::default().add_modifier(Modifier::BOLD)),
+        stat("Total jobs", total.to_string(),              Style::default().add_modifier(Modifier::BOLD)),
+        Line::from(Span::styled("─".repeat(20), dim)),
+        stat("Queued",     queued.to_string(),             Style::default().fg(WARN)),
+        brow("Dispatched", dispatched.to_string(), Style::default().fg(Color::LightYellow), "┐", None),
+        brow("Compiling",  compiling.to_string(),  Style::default().fg(Color::Blue), "│", Some((active.to_string(),   active_sum_s))),
+        brow("Executing",  executing.to_string(),  Style::default().fg(ACCENT),      "┘", None),
+        brow("Done",       completed.to_string(),  Style::default().fg(SUCCESS),     "┐", None),
+        brow("Failed",     failed.to_string(),     Style::default().fg(ERR),         "│", Some((terminal.to_string(), terminal_sum_s))),
+        brow("Cancelled",  cancelled.to_string(),  Style::default().fg(CANCEL),      "┘", None),
+    ];
     let para = Paragraph::new(Text::from(lines))
         .block(styled_block("Orchestrator"));
     frame.render_widget(para, area);
