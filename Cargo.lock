@@ -455,6 +455,7 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "rand 0.10.0",
  "shared",
  "thiserror 2.0.18",
  "tokio",

@@ -18,18 +18,18 @@ fn main() {
         }
     };
     
-    let res = fib(n);
-    print!("fib({n}) = {res}");
+    // let res = fib(n);
+    // print!("fib({n}) = {res}");
 
-    // sleep(Duration::from_secs(n.into()));
-    // print!("slept for {} seconds", n);
+    sleep(Duration::from_secs(n.into()));
+    print!("slept for {} seconds", n);
 
 }
 
-fn fib(n: u32) -> u32 {
-    if n <= 1 {
-        n
-    } else {
-        fib(n - 1) + fib(n - 2)
-    }
-}
+// fn fib(n: u32) -> u32 {
+//     if n <= 1 {
+//         n
+//     } else {
+//         fib(n - 1) + fib(n - 2)
+//     }
+// }
