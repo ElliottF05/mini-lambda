@@ -1,3 +1,8 @@
+/// Number of sortable columns in each table — used by the key handler for wrapping.
+pub const JOB_COLS: usize = 7;
+pub const WORKER_COLS: usize = 6;
+pub const CLIENT_COLS: usize = 7;
+
 /// Which tab is currently active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tab {
@@ -21,10 +26,10 @@ impl Tab {
     pub fn title(self) -> &'static str {
         match self {
             Tab::Dashboard => "Dashboard",
-            Tab::Jobs => "Jobs",
-            Tab::Workers => "Workers",
-            Tab::Clients => "Clients",
-            Tab::Logs => "Logs",
+            Tab::Jobs      => "Jobs",
+            Tab::Workers   => "Workers",
+            Tab::Clients   => "Clients",
+            Tab::Logs      => "Logs",
         }
     }
 
@@ -56,102 +61,47 @@ pub enum SortDir {
 impl SortDir {
     pub fn toggle(self) -> Self {
         match self {
-            SortDir::Asc => SortDir::Desc,
+            SortDir::Asc  => SortDir::Desc,
             SortDir::Desc => SortDir::Asc,
         }
     }
 }
 
-/// Sort column for the Jobs table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum JobSortCol {
-    #[default]
-    QueuedAt,
-    State,
-    QueueTime,
-    WorkerTime,
-    Client,
-    Worker,
-}
-
-impl JobSortCol {
-    pub const ALL: &'static [JobSortCol] = &[
-        JobSortCol::QueuedAt,
-        JobSortCol::State,
-        JobSortCol::QueueTime,
-        JobSortCol::WorkerTime,
-        JobSortCol::Client,
-        JobSortCol::Worker,
-    ];
-
-    pub fn next(self) -> Self {
-        let i = Self::ALL.iter().position(|&c| c == self).unwrap_or(0);
-        Self::ALL[(i + 1) % Self::ALL.len()]
-    }
-}
-
-/// Sort column for the Workers table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum WorkerSortCol {
-    #[default]
-    ConnectedAt,
-    JobsReceived,
-    TotalJobTime,
-    Status,
-}
-
-impl WorkerSortCol {
-    pub const ALL: &'static [WorkerSortCol] = &[
-        WorkerSortCol::ConnectedAt,
-        WorkerSortCol::JobsReceived,
-        WorkerSortCol::TotalJobTime,
-        WorkerSortCol::Status,
-    ];
-
-    pub fn next(self) -> Self {
-        let i = Self::ALL.iter().position(|&c| c == self).unwrap_or(0);
-        Self::ALL[(i + 1) % Self::ALL.len()]
-    }
-}
-
-/// Sort column for the Clients table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ClientSortCol {
-    #[default]
-    ConnectedAt,
-    JobsSubmitted,
-    TotalQueueTime,
-    TotalWorkerTime,
-}
-
-impl ClientSortCol {
-    pub const ALL: &'static [ClientSortCol] = &[
-        ClientSortCol::ConnectedAt,
-        ClientSortCol::JobsSubmitted,
-        ClientSortCol::TotalQueueTime,
-        ClientSortCol::TotalWorkerTime,
-    ];
-
-    pub fn next(self) -> Self {
-        let i = Self::ALL.iter().position(|&c| c == self).unwrap_or(0);
-        Self::ALL[(i + 1) % Self::ALL.len()]
-    }
-}
-
-/// Full UI state for the TUI — current tab, sort settings, and row selections.
-#[derive(Debug, Default)]
+/// Full UI state — current tab, per-table sort column (by index), direction, and row selection.
+#[derive(Debug)]
 pub struct TuiState {
     pub tab: Tab,
 
-    pub jobs_sort_col: JobSortCol,
+    /// Jobs table: col 0=Age, 1=Client, 2=Worker, 3=State, 4=Queue time, 5=Wkr time, 6=ID
+    pub jobs_sort_col: usize,
     pub jobs_sort_dir: SortDir,
     pub jobs_selected: usize,
 
-    pub workers_sort_col: WorkerSortCol,
+    /// Workers table: col 0=Address, 1=Status, 2=Jobs rcvd, 3=Avg job, 4=Total time, 5=Connected
+    pub workers_sort_col: usize,
     pub workers_sort_dir: SortDir,
     pub workers_selected: usize,
 
-    pub clients_sort_col: ClientSortCol,
+    /// Clients table: col 0=Address, 1=Jobs, 2=Avg queue, 3=Tot queue, 4=Avg worker, 5=Tot worker, 6=Connected
+    pub clients_sort_col: usize,
     pub clients_sort_dir: SortDir,
     pub clients_selected: usize,
+}
+
+impl Default for TuiState {
+    fn default() -> Self {
+        Self {
+            tab: Tab::default(),
+            // Sort jobs by Age (col 0) descending = youngest first
+            jobs_sort_col: 0,
+            jobs_sort_dir: SortDir::Desc,
+            jobs_selected: 0,
+            workers_sort_col: 0,
+            workers_sort_dir: SortDir::default(),
+            workers_selected: 0,
+            clients_sort_col: 0,
+            clients_sort_dir: SortDir::default(),
+            clients_selected: 0,
+        }
+    }
 }

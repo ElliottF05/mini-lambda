@@ -14,7 +14,7 @@ use ratatui::backend::CrosstermBackend;
 use tui_logger::TuiWidgetState;
 
 use crate::diagnostics::DiagnosticsStore;
-use state::{JobSortCol, Tab, TuiState};
+use state::{CLIENT_COLS, JOB_COLS, Tab, TuiState, WORKER_COLS};
 
 #[derive(PartialEq)]
 enum Action {
@@ -37,12 +37,14 @@ pub async fn run(diagnostics: Arc<DiagnosticsStore>) -> io::Result<()> {
     let mut tick = tokio::time::interval(Duration::from_millis(250));
 
     loop {
-        terminal.draw(|f| render::draw(f, &state, &diagnostics, &log_state))?;
+        terminal.draw(|f| render::draw(f, &mut state, &diagnostics, &log_state))?;
 
         tokio::select! {
             maybe_event = events.next() => {
                 match maybe_event {
-                    Some(Ok(Event::Key(key))) => {
+                    Some(Ok(Event::Key(key)))
+                        if key.kind == crossterm::event::KeyEventKind::Press =>
+                    {
                         if handle_key(key, &mut state) == Action::Quit {
                             break;
                         }
@@ -98,9 +100,22 @@ fn handle_key(key: crossterm::event::KeyEvent, state: &mut TuiState) -> Action {
             &mut state.jobs_selected,
             &mut state.jobs_sort_col,
             &mut state.jobs_sort_dir,
+            JOB_COLS,
         ),
-        Tab::Workers => handle_worker_key(key, state),
-        Tab::Clients => handle_client_key(key, state),
+        Tab::Workers => handle_table_key(
+            key,
+            &mut state.workers_selected,
+            &mut state.workers_sort_col,
+            &mut state.workers_sort_dir,
+            WORKER_COLS,
+        ),
+        Tab::Clients => handle_table_key(
+            key,
+            &mut state.clients_selected,
+            &mut state.clients_sort_col,
+            &mut state.clients_sort_dir,
+            CLIENT_COLS,
+        ),
         _ => {}
     }
 
@@ -110,34 +125,19 @@ fn handle_key(key: crossterm::event::KeyEvent, state: &mut TuiState) -> Action {
 fn handle_table_key(
     key: crossterm::event::KeyEvent,
     selected: &mut usize,
-    sort_col: &mut JobSortCol,
+    sort_col: &mut usize,
     sort_dir: &mut state::SortDir,
+    num_cols: usize,
 ) {
     match key.code {
+        // Row navigation
         KeyCode::Down | KeyCode::Char('j') => *selected = selected.saturating_add(1),
         KeyCode::Up   | KeyCode::Char('k') => *selected = selected.saturating_sub(1),
-        KeyCode::Char('s') => *sort_col = sort_col.next(),
+        // Sort column: left/right arrows or s (right alias)
+        KeyCode::Right | KeyCode::Char('s') => *sort_col = (*sort_col + 1) % num_cols,
+        KeyCode::Left                        => *sort_col = sort_col.checked_sub(1).unwrap_or(num_cols - 1),
+        // Toggle sort direction
         KeyCode::Char('r') => *sort_dir = sort_dir.toggle(),
-        _ => {}
-    }
-}
-
-fn handle_worker_key(key: crossterm::event::KeyEvent, state: &mut TuiState) {
-    match key.code {
-        KeyCode::Down | KeyCode::Char('j') => state.workers_selected = state.workers_selected.saturating_add(1),
-        KeyCode::Up   | KeyCode::Char('k') => state.workers_selected = state.workers_selected.saturating_sub(1),
-        KeyCode::Char('s') => state.workers_sort_col = state.workers_sort_col.next(),
-        KeyCode::Char('r') => state.workers_sort_dir = state.workers_sort_dir.toggle(),
-        _ => {}
-    }
-}
-
-fn handle_client_key(key: crossterm::event::KeyEvent, state: &mut TuiState) {
-    match key.code {
-        KeyCode::Down | KeyCode::Char('j') => state.clients_selected = state.clients_selected.saturating_add(1),
-        KeyCode::Up   | KeyCode::Char('k') => state.clients_selected = state.clients_selected.saturating_sub(1),
-        KeyCode::Char('s') => state.clients_sort_col = state.clients_sort_col.next(),
-        KeyCode::Char('r') => state.clients_sort_dir = state.clients_sort_dir.toggle(),
         _ => {}
     }
 }

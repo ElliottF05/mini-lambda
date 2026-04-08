@@ -9,6 +9,8 @@ mod tui;
 
 use clap::Parser;
 use tonic::transport::Server;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use shared::{client_api_server::ClientApiServer, worker_api_server::WorkerApiServer};
 use crate::{client_api::check_client_auth, orchestrator::Orchestrator, worker_api::check_worker_auth};
@@ -45,6 +47,17 @@ fn init_tracing_tui(verbose: bool) {
         std::process::exit(1);
     });
     tui_logger::set_default_level(level);
+
+    // With the tracing-support feature, init_logger only starts the buffer thread.
+    // We must also register TuiTracingSubscriberLayer as the tracing backend.
+    let filter = if verbose { "orchestrator=debug" } else { "orchestrator=info" };
+    tracing_subscriber::registry()
+        .with(tui_logger::TuiTracingSubscriberLayer)
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| filter.into()),
+        )
+        .init();
 }
 
 /// Main entry point for the Orchestrator server binary.
