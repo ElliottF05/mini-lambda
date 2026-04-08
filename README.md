@@ -20,13 +20,20 @@
 
 ## Architecture
 
-Clients submit `.wasm` bytes and to the orchestrator, which queues the job and assigns it to an available worker based on credit capacity. The orchestrator and workers maintain a persistent bidirectional gRPC stream for job dispatch and state updates. Once assigned, the client connects directly to the worker to execute — the orchestrator is no longer in the hot path.
+The client sends a job request to the orchestrator, which queues it until a worker with sufficient capacity is available. The orchestrator then assigns the job to a worker and returns the worker's address along with a JWT scoped to that job. The client uses these to connect directly to the worker, sending the `.wasm` bytes and arguments, and receiving the final result. The orchestrator maintains a persistent bidirectional gRPC stream with each worker for job dispatch and status updates.
 
 ```
-Client ──→ Orchestrator ──→ Worker
-              (queue)      (compile + run)
-Client ─────────────────────────────────→ Worker
-                    (execute directly)
+┌────────┐  1. request worker   ┌──────────────┐
+│        │ ───────────────────→ │              │
+│ Client │                      │ Orchestrator │
+│        │ ←─────────────────── │              │
+└────┬───┘  2. worker addr + JWT└──────────────┘
+     │                                 ↕  (persistent stream)
+     │                          ┌─────────────┐
+     │   3. send wasm + args    │             │
+     ├────────────────────────→ │   Worker    │
+     │   4. receive result      │             │
+     ←──────────────────────────└─────────────┘
 ```
 
 ---
@@ -37,17 +44,17 @@ Client ────────────────────────�
 
 1. **Start the orchestrator:**
    ```bash
-   cargo run -p mini-lambda-orchestrator -- 127.0.0.1:50051
+   cargo run -p orchestrator -- 127.0.0.1:50051
    ```
 
 2. **Start one or more workers** (each needs a bind host and an initial credit count):
    ```bash
-   cargo run -p mini-lambda-worker -- 127.0.0.1 100
+   cargo run -p worker -- 127.0.0.1 100
    ```
 
 3. **Submit a job:**
    ```bash
-   cargo run -p mini-lambda-client -- crates/client/test-wasm/test-wasm.wasm
+   cargo run -p client -- crates/client/test-wasm/test-wasm.wasm
    ```
 
 Workers register with the orchestrator and accept jobs from clients directly. Running locally with `127.0.0.1` works fine; for distributed deployments, use publicly reachable IPs or hostnames for both the orchestrator and each worker.
