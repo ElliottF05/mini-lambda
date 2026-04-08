@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{ops::Range, time::Duration};
 
 use rand;
 use tokio::task::JoinSet;
@@ -17,12 +17,13 @@ async fn main() {
     // Configure the number of clients and their job submission patterns here.
     let num_clients = 1; // should be >= 1
     let total_jobs_per_client = 100;
-    let concurrent_jobs_per_client = 15; // should be less that total_jobs_per_client
-    let cached_probability = 0.5; // should be in [0,1]
+    let concurrent_jobs_per_client = 12; // should be less that total_jobs_per_client
+    let cached_probability = 0.2; // should be in [0,1]
 
     // Configure job details
-    let sleep_range = 1..5;
-    let timeout_range = 1..10;
+    let sleep_range = 0..5;
+    let timeout_range = 1..12;
+    let job_failure_probability = 0.15;
 
     let mut join_handles = JoinSet::new();
     for _ in 0..num_clients {
@@ -36,13 +37,7 @@ async fn main() {
 
             let mut join_set = JoinSet::new();
             for _ in 0..concurrent_jobs_per_client {
-                let bytes = if rand::random::<f64>() < cached_probability { wasm_bytes.clone() } else {
-                    let salt: [u8; 64] = rand::random();
-                    add_custom_section(&wasm_bytes, &salt)
-                };
-                let job = Job::from_bytes(bytes)
-                    .arg(rand::random_range(sleep_range.clone()).to_string())
-                    .timeout(Duration::from_secs(rand::random_range(timeout_range.clone())));
+                let job = create_job(&wasm_bytes, cached_probability, job_failure_probability, &sleep_range, &timeout_range);
                 join_set.spawn(client.submit_job(job).wait());
             }
 
@@ -56,13 +51,7 @@ async fn main() {
 
                 if jobs_remaining > 0 {
                     jobs_remaining -= 1;
-                    let bytes = if rand::random::<f64>() < cached_probability { wasm_bytes.clone() } else { 
-                        let salt: [u8; 64] = rand::random();
-                        add_custom_section(&wasm_bytes, &salt)
-                    };
-                    let job = Job::from_bytes(bytes)
-                        .arg(rand::random_range(sleep_range.clone()).to_string())
-                        .timeout(Duration::from_secs(rand::random_range(timeout_range.clone())));
+                    let job = create_job(&wasm_bytes, cached_probability, job_failure_probability, &sleep_range, &timeout_range);
                     join_set.spawn(client.submit_job(job).wait());
                 }
             }
@@ -72,6 +61,27 @@ async fn main() {
             _ = result.unwrap_or_else(|e| panic!("client task panicked: {}", e));
         }
     }
+}
+
+fn create_job(
+    wasm: &[u8], 
+    cached_probability: f64, 
+    job_failure_probability: f64, 
+    sleep_range: &Range<i32>, 
+    timeout_range: &Range<u64>) -> Job {
+    let bytes = if rand::random::<f64>() < cached_probability { wasm.to_vec() } else {
+        let salt: [u8; 64] = rand::random();
+        add_custom_section(&wasm, &salt)
+    };
+
+    let arg = if rand::random::<f64>() < job_failure_probability { "invalid".to_string() } else {
+        rand::random_range(sleep_range.clone()).to_string()
+    };
+    let job = Job::from_bytes(bytes)
+        .arg(arg)
+        .timeout(Duration::from_secs(rand::random_range(timeout_range.clone())));
+
+    return job;
 }
 
 fn add_custom_section(wasm: &[u8], salt: &[u8]) -> Vec<u8> {
