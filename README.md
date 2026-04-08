@@ -1,6 +1,6 @@
 # mini-lambda
 
-![mini-lambda CLI demo](cli.png)
+![mini-lambda CLI demo](cli.gif)
 
 ## Overview
 
