@@ -23,17 +23,19 @@
 The client sends a job request to the orchestrator, which queues it until a worker with sufficient capacity is available. The orchestrator then assigns the job to a worker and returns the worker's address along with a JWT scoped to that job. The client uses these to connect directly to the worker, sending the `.wasm` bytes and arguments, and receiving the final result. The orchestrator maintains a persistent bidirectional gRPC stream with each worker for job dispatch and status updates.
 
 ```
-┌────────┐  1. request worker   ┌──────────────┐
-│        │ ───────────────────→ │              │
-│ Client │                      │ Orchestrator │
-│        │ ←─────────────────── │              │
-└────┬───┘  2. worker addr + JWT└──────────────┘
-     │                                 ↕  (persistent stream)
-     │                          ┌─────────────┐
-     │   3. send wasm + args    │             │
-     ├────────────────────────→ │   Worker    │
-     │   4. receive result      │             │
-     ←──────────────────────────└─────────────┘
+┌────────┐   1. request worker       ┌──────────────┐
+│        │ ────────────────────────→ │              │
+│        │                           │ Orchestrator │
+│        │ ←──────────────────────── │              │
+│        │   2. worker addr + JWT    └──────────────┘
+│        │                                  ↑
+│ Client │                                  │  (persistent stream)
+│        │                                  ↓
+│        │   3. send wasm + args     ┌─────────────┐
+│        │ ────────────────────────→ │             │
+│        │                           │   Worker    │
+│        │ ←──────────────────────── │             │
+└────────┘   4. receive result       └─────────────┘
 ```
 
 ---
