@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package worker_api;
+
+// The API exposed by the Orchestrator to the Worker.
+service WorkerApi {
+    // Establishes a bidirectional stream between the Worker and the Orchestrator.
+    rpc ConnectWorker(stream WorkerMessage) returns (stream OrchestratorMessage);
+}
+
+
+
+// Messages sent by the Worker to the Orchestrator.
+message WorkerMessage {
+    oneof message {
+        WorkerRegistration registration = 1;
+        CreditUpdate credit_update = 2;
+        JobUpdate job_update = 3;
+    }
+}
+
+// Initial registration message sent by the Worker.
+message WorkerRegistration {
+    string address = 1;
+    uint32 credits = 2;
+}
+
+// Sent by a Worker to report a *change* in available credit count (not an absolute value).
+message CreditUpdate {
+    uint32 delta = 1;
+}
+
+// TODO: documentation string here
+enum JobState {
+    JOB_STATE_UNSPECIFIED = 0;
+    JOB_STATE_COMPILING = 1;
+    JOB_STATE_EXECUTING = 2;
+    JOB_STATE_COMPLETED = 3;
+    JOB_STATE_FAILED = 4;
+    JOB_STATE_CANCELLED = 5;
+}
+
+// TODO: documentation string here
+message JobUpdate {
+    bytes job_id = 1;
+    JobState state = 2;
+}
+
+
+// Messages sent by the Orchestrator to the Worker.
+message OrchestratorMessage {
+    oneof message {
+        RegistrationAck registration_ack = 1;
+    }
+}
+
+// Registration acknowledgment message sent by the Orchestrator.
+message RegistrationAck {
+    bytes jwt_secret = 1;
+    bool network_access_allowed = 2;
+}

@@ -1,61 +1,102 @@
+mod orchestrator;
+mod client_api;
+mod worker_api;
 mod registry;
+mod job_queue;
 mod errors;
-mod handlers;
-mod heartbeat;
-mod queue;
+mod diagnostics;
+mod tui;
 
-use std::net::SocketAddr;
-
-use axum::{extract::Extension, routing::{get, post}, Router};
-use tracing::{error, info};
 use clap::Parser;
-use tower_http::trace::TraceLayer;
+use tonic::transport::Server;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
-use registry::WorkerRegistry;
+use shared::{client_api_server::ClientApiServer, worker_api_server::WorkerApiServer};
+use crate::{client_api::check_client_auth, orchestrator::Orchestrator, worker_api::check_worker_auth};
 
-use crate::{handlers::{get_monitoring_info, register_worker, request_worker, unregister_worker, update_credits}, heartbeat::handle_heartbeat_received, queue::PendingQueue};
+#[derive(Parser, Debug)]
+#[command(about = "Run the Orchestrator server")]
+struct Args {
+    #[arg(default_value = "127.0.0.1:50051")]
+    addr: std::net::SocketAddr,
+    #[arg(long, help = "Password required for workers to register. If not set, no password is required.")]
+    worker_password: Option<String>,
+    #[arg(long, help = "Password required for clients to submit jobs. If not set, no password is required.")]
+    client_password: Option<String>,
+    #[arg(long, help = "Permit jobs to make network connections")]
+    network_access_allowed: bool,
+    #[arg(long, help = "Launch the interactive TUI dashboard")]
+    tui: bool,
+    #[arg(long, help = "Enable debug logging")]
+    verbose: bool,
+}
 
-const MAX_QUEUE_SIZE: usize = 10;
+fn init_tracing_plain(verbose: bool) {
+    let filter = if verbose { "orchestrator=debug" } else { "orchestrator=info" };
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| filter.into())
+        )
+        .init();
+}
 
-
-#[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt::init();
-    #[derive(Parser)]
-    struct Opts {
-        /// address to bind, e.g. 127.0.0.1:8080
-        #[arg(long, default_value = "127.0.0.1:8080")]
-        bind: String,
-    }
-
-    let opts = Opts::parse();
-
-    let registry = WorkerRegistry::new();
-    let pending_queue = PendingQueue::new(MAX_QUEUE_SIZE);
-
-    // bind to configured address
-    let listener = tokio::net::TcpListener::bind(&opts.bind).await.unwrap();
-    let app = Router::new()
-        .route("/register_worker", post(register_worker))
-        .route("/unregister_worker", post(unregister_worker))
-        .route("/update_credits", post(update_credits))
-        .route("/request_worker", post(request_worker))
-        .route("/heartbeat", post(handle_heartbeat_received))
-        .route("/monitoring_info", get(get_monitoring_info))
-        .layer(TraceLayer::new_for_http()) // add request tracing
-        .layer(Extension(registry)) // inject registry
-        .layer(Extension(pending_queue)); // inject pending queue
-
-    info!("orchestrator listening on {}", opts.bind);
-
-    let server = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>());
-    let graceful = server.with_graceful_shutdown(async {
-        if let Err(e) = tokio::signal::ctrl_c().await {
-            error!("failed to listen for ctrl_c: {}", e);
-        }
+fn init_tracing_tui(verbose: bool) {
+    let level = if verbose { log::LevelFilter::Debug } else { log::LevelFilter::Info };
+    tui_logger::init_logger(level).unwrap_or_else(|e| {
+        eprintln!("failed to init tui-logger: {e}");
+        std::process::exit(1);
     });
+    tui_logger::set_default_level(level);
 
-    if let Err(e) = graceful.await {
-        error!("server error: {}", e);
+    // With the tracing-support feature, init_logger only starts the buffer thread.
+    // We must also register TuiTracingSubscriberLayer as the tracing backend.
+    let filter = if verbose { "orchestrator=debug" } else { "orchestrator=info" };
+    tracing_subscriber::registry()
+        .with(tui_logger::TuiTracingSubscriberLayer)
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| filter.into()),
+        )
+        .init();
+}
+
+/// Main entry point for the Orchestrator server binary.
+#[tokio::main]
+pub async fn main() {
+    let args = Args::parse();
+
+    let addr = args.addr;
+    let orchestrator = Orchestrator::new(args.worker_password, args.client_password, args.network_access_allowed);
+
+    let client_server = ClientApiServer::with_interceptor(orchestrator.clone(), check_client_auth(orchestrator.clone()));
+    let worker_server = WorkerApiServer::with_interceptor(orchestrator.clone(), check_worker_auth(orchestrator.clone()));
+
+    if args.tui {
+        init_tracing_tui(args.verbose);
+
+        let diagnostics = orchestrator.diagnostics.clone();
+        tokio::spawn(async move {
+            tracing::info!("Orchestrator listening on {}", addr);
+            Server::builder()
+                .add_service(client_server)
+                .add_service(worker_server)
+                .serve(addr)
+                .await
+                .unwrap_or_else(|e| panic!("Failed to serve the Orchestrator: {}", e));
+        });
+
+        tui::run(diagnostics).await
+            .unwrap_or_else(|e| eprintln!("TUI error: {e}"));
+    } else {
+        init_tracing_plain(args.verbose);
+        tracing::info!("Orchestrator listening on {}", addr);
+        Server::builder()
+            .add_service(client_server)
+            .add_service(worker_server)
+            .serve(addr)
+            .await
+            .unwrap_or_else(|e| panic!("Failed to serve the Orchestrator: {}", e));
     }
 }

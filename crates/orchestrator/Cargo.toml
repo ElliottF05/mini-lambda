@@ -1,21 +1,25 @@
 [package]
-name = "mini-lambda-orchestrator"
+name = "orchestrator"
 version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-tokio = { workspace = true, features = ["signal"]}
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-axum = { workspace = true }
-mini-lambda-proto = { path = "../proto" }
-anyhow = { workspace = true }
-thiserror = { workspace = true }
+shared = { path = "../shared" }
+tonic = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true, features = []}
+priority-queue = { version = "2.7" }
+hashlink = { version = "0.11"}
+clap = { workspace = true }
 uuid = { workspace = true }
-reqwest = { workspace = true }
+thiserror = { workspace = true }
+rand = {workspace = true }
+jsonwebtoken = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-sha2 = { workspace = true }
-hex = { workspace = true }
-clap = { workspace = true }
-tower-http = { version = "0.6.6", features = ["trace"] }
+dashmap = { workspace = true }
+ratatui = "0.30"
+crossterm = { version = "0.29", features = ["event-stream"] }
+tui-logger = { version = "0.18", features = ["tracing-support"] }
+futures = "0.3"
+log = "0.4"

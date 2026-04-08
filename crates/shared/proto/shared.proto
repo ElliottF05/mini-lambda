@@ -1,0 +1,10 @@
+syntax = "proto3";
+package shared;
+
+// A request to cancel a pending or active job.
+message CancelJobRequest {
+    bytes job_id = 1;
+}
+
+// Empty response, cancellation is fire-and-forget.
+message CancelJobResponse {}
